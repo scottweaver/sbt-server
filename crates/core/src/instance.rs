@@ -23,6 +23,7 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot, watch};
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 pub use self::descriptor::{ConnectionInfo, DescriptorError, ServerUri, Token};
@@ -40,6 +41,9 @@ const INPUT_QUEUE: usize = 1024;
 const EXEC_QUEUE: usize = 256;
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const REAP_TIMEOUT: Duration = Duration::from_secs(10);
+/// After sbt exits, how long to wait for its pipes to reach EOF before
+/// reporting the exit anyway (a grandchild it left behind may hold them).
+const PIPE_DRAIN_GRACE: Duration = Duration::from_secs(2);
 /// A closed socket usually precedes the kernel's exit report by a moment;
 /// wait this long before calling a lost connection anything but a death.
 const DEATH_GRACE: Duration = Duration::from_secs(2);
@@ -259,14 +263,18 @@ impl Instance {
         let (inputs, inbox) = mpsc::channel(INPUT_QUEUE);
         let (phase_tx, phase) = watch::channel(Phase::Booting);
         tokio::spawn(Router::new(root.clone(), pid, inbox, phase_tx).run());
-        if let Some(stdout) = child.stdout.take() {
-            tokio::spawn(pump(stdout, inputs.clone(), Input::Stdout));
-        }
-        if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(pump(stderr, inputs.clone(), Input::Stderr));
-        }
+        let pumps = [
+            child
+                .stdout
+                .take()
+                .map(|stdout| tokio::spawn(pump(stdout, inputs.clone(), Input::Stdout))),
+            child
+                .stderr
+                .take()
+                .map(|stderr| tokio::spawn(pump(stderr, inputs.clone(), Input::Stderr))),
+        ];
         let kill = Arc::new(Notify::new());
-        tokio::spawn(supervise(child, Arc::clone(&kill), inputs.clone()));
+        tokio::spawn(supervise(child, Arc::clone(&kill), inputs.clone(), pumps));
         let guard = KillOnDrop(Arc::clone(&kill));
 
         let boot = Boot {
@@ -443,8 +451,17 @@ async fn pump<R: AsyncRead + Unpin>(
     }
 }
 
-/// Sole owner of the child: reports its exit, and kills it on request.
-async fn supervise(mut child: Child, kill: Arc<Notify>, inputs: mpsc::Sender<Input>) {
+/// Sole owner of the child: reports its exit, and kills it on request. The
+/// exit is reported only after both pipe pumps have forwarded everything
+/// (bounded by `PIPE_DRAIN_GRACE`), so the last lines a dying sbt wrote,
+/// the ones that explain a failed project load, precede `ChildExited` on
+/// the instance channel instead of racing it.
+async fn supervise(
+    mut child: Child,
+    kill: Arc<Notify>,
+    inputs: mpsc::Sender<Input>,
+    pumps: [Option<JoinHandle<()>>; 2],
+) {
     let status = tokio::select! {
         status = child.wait() => status,
         () = kill.notified() => {
@@ -452,6 +469,11 @@ async fn supervise(mut child: Child, kill: Arc<Notify>, inputs: mpsc::Sender<Inp
             child.wait().await
         }
     };
+    for pump in pumps.into_iter().flatten() {
+        if timeout(PIPE_DRAIN_GRACE, pump).await.is_err() {
+            tracing::debug!("a pipe is still open after sbt exited; reporting the exit anyway");
+        }
+    }
     drop(inputs.send(Input::ChildExited(status.ok())).await);
 }
 

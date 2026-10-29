@@ -77,7 +77,11 @@ are green.
   does, `build/logMessage` is dropped except at debug level because the
   attached terminal stream carries the same lines rendered; lines with
   sbt's `[level] ` prefix are parsed back into `log` events. Fixture
-  refrozen from an attached capture. Risk: sbt's terminal queries are
+  refrozen from an attached capture. The first CI run on `main` (ubuntu)
+  then exposed a second defect, fixed in the same PR: the child's exit was
+  reported before its pipes were drained, so a fast-dying sbt's last lines
+  (the ones that explain a failed project load) could be missing from
+  `project_load_failed` (issue #2). Risk: sbt's terminal queries are
   answered generically; an sbt that asks something new would get "method
   not found", and its `getCapability` has no timeout.
 - **2026-10-29 — Phase 5: CI, README, rebuild complete** (branch
