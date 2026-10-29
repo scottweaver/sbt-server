@@ -9,6 +9,7 @@ pub mod events;
 pub mod lines;
 pub mod output;
 pub mod session;
+pub mod terminal;
 
 use std::ffi::OsString;
 use std::io;
@@ -510,7 +511,7 @@ impl Boot<'_> {
                 uri: info.uri.clone(),
                 source,
             })?;
-        let connection = Connection::open(io, self.inputs.clone());
+        let connection = Connection::open(io, self.inputs.clone(), terminal::answer);
         let handshake = Unauthenticated::new(connection).initialize(info.token.as_ref());
         timeout(self.timeouts.handshake, handshake)
             .await
@@ -556,8 +557,8 @@ async fn request_foreign_shutdown(info: &ConnectionInfo, timeouts: &Timeouts) ->
     };
     let (sink, mut drain) = mpsc::channel::<Notification>(64);
     tokio::spawn(async move { while drain.recv().await.is_some() {} });
-    let handshake =
-        Unauthenticated::new(Connection::open(io, sink)).initialize(info.token.as_ref());
+    let handshake = Unauthenticated::new(Connection::open(io, sink, terminal::answer))
+        .initialize(info.token.as_ref());
     let Ok(Ok(session)) = timeout(timeouts.handshake, handshake).await else {
         return ShutdownRpc::ConnectionClosed;
     };

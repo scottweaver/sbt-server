@@ -101,6 +101,19 @@ crates/
   strings. sbt's source (`CommandExchange.scala`) codes `ConnectionType.Tcp`
   as the default, but on the original development machine sbt actually
   picked a Unix domain socket, and so does this one (sbt 1.11.7).
+- **The handshake is `initialize` then `sbt/attach` with
+  `{"interactive": false}`**, exactly what sbtn does for a batch command.
+  Until a client attaches, the channel's terminal is sbt's `NullTerminal`
+  and everything written to it is lost: a test framework's per-test lines,
+  for one (found live on 2026-10-29: `sbtctl test` showed only the
+  `[info] Passed:` summary). Attaching installs a terminal whose output
+  arrives as `sbt/systemOut`/`sbt/systemErr`. Right after the attach sbt
+  queries the terminal (`sbt/terminalPropertiesQuery`, and on demand
+  `sbt/terminalCapabilities`, `sbt/terminalGetSize`, the attribute, echo
+  and raw-mode calls); `instance/terminal.rs` answers each as a dumb
+  80x24 terminal, because sbt blocks until an answer arrives (five seconds
+  for the properties query, unbounded for capabilities). Any other
+  server-initiated request is declined with "method not found".
 - **Token auth is optional, not mandatory** (gotcha 2). Over the default
   Local transport sbt treats the connecting process as already
   authenticated via Unix-socket filesystem permissions and omits
@@ -201,7 +214,8 @@ crates/
   would mean silent output loss, so backpressure is applied instead.
   `sbt/systemOut` and `sbt/systemErr` arrive as arrays of signed bytes in
   arbitrary chunks and are reassembled into whole lines
-  (`instance/lines.rs`), as are the raw pipes.
+  (`instance/lines.rs`), as are the raw pipes. They flow only to an
+  attached client (see the handshake rule under sbt driver protocol).
 - **Project-loading output cannot be attributed to a command.** Anything
   that fires during project loading (the `gcloud` credential-refresh
   warning, for instance) happens before the JSON-RPC handshake completes
@@ -214,10 +228,17 @@ crates/
   `[success] 'compile' completed in 1.2s` or
   `[error] 'compile' failed (exit code 1) in 0.8s` — appended after any
   real completion message sbt's RPC response did include.
-- **Debug-level log notifications are dropped by default** (gotcha 8). The
-  content-free "Processing sbt/exec" lines are `build/logMessage`
-  notifications at LSP level 4 (log/debug), which sbt's own thin client
-  drops too; `/exec` forwards them only when the request sets `verbose`.
+- **Once attached, the terminal stream is the source of log lines and
+  `build/logMessage` is dropped except at debug level** (gotcha 8, and
+  what sbtn does). sbt's console appender renders every log event onto the
+  channel terminal as `[info] …`/`[warn] …`/`[error] …` and the same event
+  also arrives as a `build/logMessage` notification, so forwarding both
+  would print everything twice. `sbt_stdout` lines carrying sbt's own
+  `[level] ` prefix become `log` events (`instance/events.rs::log_line`),
+  other lines on it (a test framework's output) stay `output`, and
+  `build/logMessage` is used only for level 4 (log/debug), which the
+  appender never renders: the content-free "Processing sbt/exec" lines,
+  forwarded only when the request sets `verbose`.
   `build/taskStart|taskProgress|taskFinish` and `sbt/exec` status
   notifications are ignored; completion is the response to the `sbt/exec`
   request.

@@ -232,7 +232,19 @@ impl Router {
 
     async fn on_notification(&mut self, notification: &Notification) {
         match events::translate(notification) {
-            Translated::Log { level, text } => self.emit(ExecEvent::Log { level, text }).await,
+            Translated::Log {
+                level: LogLevel::Debug,
+                text,
+            } => {
+                self.emit(ExecEvent::Log {
+                    level: LogLevel::Debug,
+                    text,
+                })
+                .await;
+            }
+            Translated::Log { level, text } => {
+                tracing::trace!(?level, %text, "logMessage dropped; the terminal stream carries it");
+            }
             Translated::Bytes { stream, bytes } => {
                 let lines = self.sbt_assembler(stream).push(&bytes);
                 self.emit_lines(output_stream(stream), lines).await;
@@ -375,9 +387,24 @@ impl Router {
         self.publish();
     }
 
+    /// The attached terminal stream carries sbt's console rendering, so a
+    /// line with sbt's own `[level] ` prefix is a log line; everything else
+    /// on it (a test framework's output, say) is plain output.
     async fn emit_lines(&mut self, stream: OutputStream, lines: Vec<String>) {
         for text in lines {
-            self.emit(ExecEvent::Output { stream, text }).await;
+            let event = match stream {
+                OutputStream::SbtStdout => match events::log_line(&text) {
+                    Some((level, rest)) => ExecEvent::Log {
+                        level,
+                        text: rest.to_owned(),
+                    },
+                    None => ExecEvent::Output { stream, text },
+                },
+                OutputStream::Stdout | OutputStream::Stderr | OutputStream::SbtStderr => {
+                    ExecEvent::Output { stream, text }
+                }
+            };
+            self.emit(event).await;
         }
     }
 

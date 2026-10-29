@@ -1,17 +1,18 @@
-# Frozen from sbt 1.11.7 on 2026-10-29: a cold `compile` of tests/fixtures/hello-sbt, paths rewritten to /tmp/hello.
-# Eleven of the twelve build/taskProgress frames were dropped for brevity.
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+# Frozen from sbt 1.11.7 on 2026-10-29: a cold `test` of a one-test munit project through an attached client,
+# paths rewritten to /tmp/hello. sbt/systemOut carries the console rendering (and the test framework's own
+# lines); the build/logMessage frames duplicate the [level] lines and are dropped by the client unless debug.
 # Synthetic: sbt sends terminal queries only to attached clients; kept so the client's refusal path stays covered.
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
 {"jsonrpc":"2.0","id":"srv-1","method":"sbt/terminalPropertiesQuery","params":{}}
-{"jsonrpc":"2.0","method":"build/taskStart","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306502472,"message":"Compiling root","dataKind":"compile-task","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"compiling 1 Scala source to /tmp/hello/target/scala-2.13/classes ..."}}
-{"jsonrpc":"2.0","method":"build/taskProgress","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306503354,"message":"Compiling root (15%)","total":26,"progress":15,"dataKind":"compile-progress","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
-# Composed from sbt's source (sbt/systemOut carries Seq[Byte]); this fixture project prints nothing itself.
-{"jsonrpc":"2.0","method":"sbt/systemOut","params":[104,101,108,108,111,32,102,114,111,109,32]}
-{"jsonrpc":"2.0","method":"sbt/systemOut","params":[112,114,105,110,116,108,110,10]}
-{"jsonrpc":"2.0","method":"sbt/systemOutFlush","params":{}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"done compiling"}}
-{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[],"reset":true}}
-{"jsonrpc":"2.0","method":"build/taskFinish","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306503789,"message":"Compiled root","status":1,"dataKind":"compile-report","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"},"errors":0,"warnings":0,"time":1317}}}
+{"jsonrpc":"2.0","method":"build/taskStart","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793314336237,"message":"Compiling root","dataKind":"compile-task","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Solution.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[],"reset":true}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Main.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[],"reset":true}}
+{"jsonrpc":"2.0","method":"build/taskFinish","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793314336252,"message":"Compiled root","status":1,"dataKind":"compile-report","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"},"errors":0,"warnings":0,"time":15,"noOp":true}}}
+{"jsonrpc":"2.0","method":"build/taskStart","params":{"taskId":{"id":"2","parents":[]},"eventTime":1793314336257,"message":"Compiling root-test","dataKind":"compile-task","data":{"target":{"uri":"file:/tmp/hello/#root/Test"}}}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/test/scala/MySuite.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Test"},"diagnostics":[],"reset":true}}
+{"jsonrpc":"2.0","method":"build/taskFinish","params":{"taskId":{"id":"2","parents":[]},"eventTime":1793314336264,"message":"Compiled root-test","status":1,"dataKind":"compile-report","data":{"target":{"uri":"file:/tmp/hello/#root/Test"},"errors":0,"warnings":0,"time":7,"noOp":true}}}
+{"jsonrpc":"2.0","method":"sbt/systemOut","params":[77,121,83,117,105,116,101,58,10,32,32,43,32,101,120,97,109,112,108,101,32,116,101,115,116,32,116,104,97,116,32,115,117,99,99,101,101,100,115,32,48,46,48,48,53,115,10]}
+{"jsonrpc":"2.0","method":"sbt/systemOut","params":[91,105,110,102,111,93,32,80,97,115,115,101,100,58,32,84,111,116,97,108,32,49,44,32,70,97,105,108,101,100,32,48,44,32,69,114,114,111,114,115,32,48,44,32,80,97,115,115,101,100,32,49,10]}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"Passed: Total 1, Failed 0, Errors 0, Passed 1"}}
 {"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
 {"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":["shell"],"exitCode":0}}

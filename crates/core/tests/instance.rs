@@ -96,10 +96,22 @@ async fn cold_start_then_exec_streams_the_scripted_output() {
         "debug noise is dropped: {logs:?}"
     );
     assert!(logs.iter().all(|(level, _)| *level != LogLevel::Debug));
-    assert!(events.contains(&ExecEvent::Output {
-        stream: OutputStream::SbtStdout,
-        text: "hello from println".into()
-    }));
+    for text in ["MySuite:", "  + example test that succeeds 0.005s"] {
+        assert!(
+            events.contains(&ExecEvent::Output {
+                stream: OutputStream::SbtStdout,
+                text: text.into()
+            }),
+            "test framework line {text:?} missing from {events:?}"
+        );
+    }
+    assert_eq!(
+        logs.iter()
+            .filter(|(_, text)| text.starts_with("Passed:"))
+            .count(),
+        1,
+        "the summary must arrive once, not from both the terminal and logMessage: {logs:?}"
+    );
     assert!(matches!(
         events.iter().find(|e| matches!(e, ExecEvent::Diagnostics { .. })),
         Some(ExecEvent::Diagnostics { items, .. }) if items.is_empty()

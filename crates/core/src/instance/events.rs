@@ -206,6 +206,23 @@ fn diagnostic(lsp: LspDiagnostic) -> Diagnostic {
     }
 }
 
+/// Split a terminal line sbt's console appender formatted, such as
+/// `[info] compiling 1 Scala source`, into its level and text. Lines with
+/// any other prefix (`[success]`, a test framework's own) are not log lines.
+#[must_use]
+pub fn log_line(text: &str) -> Option<(LogLevel, &str)> {
+    let rest = text.strip_prefix('[')?;
+    let (tag, after) = rest.split_once("] ")?;
+    let level = match tag {
+        "debug" => LogLevel::Debug,
+        "info" => LogLevel::Info,
+        "warn" => LogLevel::Warning,
+        "error" => LogLevel::Error,
+        _ => return None,
+    };
+    Some((level, after))
+}
+
 /// `file:///a/b%20c.scala` to `/a/b c.scala`; a non-file uri is kept verbatim.
 fn file_path(uri: &str) -> PathBuf {
     match uri.strip_prefix("file://") {
@@ -336,6 +353,20 @@ mod tests {
         };
         assert_eq!(file, PathBuf::from("/tmp/hello/src/main/scala/Hello.scala"));
         assert_eq!((items[0].line, items[0].column), (2, 16));
+    }
+
+    #[test]
+    fn terminal_lines_with_sbts_level_prefix_are_log_lines() {
+        assert_eq!(
+            log_line("[info] compiling 1 Scala source"),
+            Some((LogLevel::Info, "compiling 1 Scala source"))
+        );
+        assert_eq!(log_line("[warn] x"), Some((LogLevel::Warning, "x")));
+        assert_eq!(log_line("[error] "), Some((LogLevel::Error, "")));
+        assert_eq!(log_line("[success] Total time: 1 s"), None);
+        assert_eq!(log_line("  + example test that succeeds 0.005s"), None);
+        assert_eq!(log_line("MySuite:"), None);
+        assert_eq!(log_line("[info]"), None);
     }
 
     #[test]

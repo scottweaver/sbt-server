@@ -19,7 +19,10 @@ async fn connect(server: &FakeSbtServer) -> (Connection, mpsc::Receiver<Notifica
         Endpoint::Local(path) => jsonrpc::connect_unix(path).await.unwrap(),
     };
     let (tx, rx) = mpsc::channel(64);
-    (Connection::open(io, tx), rx)
+    (
+        Connection::open(io, tx, jsonrpc::decline_server_requests),
+        rx,
+    )
 }
 
 fn initialize_params(token: Option<&str>) -> Value {
@@ -75,14 +78,15 @@ async fn initialize_then_exec_delivers_every_notification_before_the_response() 
         [
             "build/logMessage",
             "build/taskStart",
-            "build/logMessage",
-            "build/taskProgress",
-            "sbt/systemOut",
-            "sbt/systemOut",
-            "sbt/systemOutFlush",
-            "build/logMessage",
+            "build/publishDiagnostics",
             "build/publishDiagnostics",
             "build/taskFinish",
+            "build/taskStart",
+            "build/publishDiagnostics",
+            "build/taskFinish",
+            "sbt/systemOut",
+            "sbt/systemOut",
+            "build/logMessage",
             "build/logMessage",
         ]
     );
@@ -113,6 +117,37 @@ async fn server_initiated_requests_are_declined_with_method_not_found() {
     .await;
     let reply = reply_to_server().unwrap();
     assert_eq!(reply.error.unwrap()["code"], json!(-32601));
+}
+
+#[tokio::test]
+async fn attaching_answers_the_terminal_query_sbt_sends_back() {
+    let (_root, server) = start(Options::default()).await;
+    let io = match server.endpoint() {
+        Endpoint::Tcp(addr) => jsonrpc::connect_tcp(*addr).await.unwrap(),
+        Endpoint::Local(path) => jsonrpc::connect_unix(path).await.unwrap(),
+    };
+    let (tx, _rx) = mpsc::channel::<Notification>(64);
+    let connection = Connection::open(io, tx, sbt_server_core::instance::terminal::answer);
+    connection
+        .request("initialize", initialize_params(None))
+        .await
+        .unwrap();
+    let attached = connection
+        .request("sbt/attach", json!({ "interactive": false }))
+        .await
+        .unwrap();
+    assert_eq!(attached, json!(""));
+
+    let answer = || {
+        server
+            .requests()
+            .into_iter()
+            .find(|r| r.method.is_none() && r.id == Some(json!("terminal-1")))
+    };
+    wait_until("the terminal properties answer", || answer().is_some()).await;
+    let result = answer().unwrap().result.unwrap();
+    assert_eq!(result["width"], json!(80));
+    assert_eq!(result["isAnsiSupported"], json!(false));
 }
 
 #[tokio::test]

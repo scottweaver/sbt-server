@@ -164,21 +164,36 @@ impl Unauthenticated {
     }
 
     /// Run sbt's `initialize` handshake, with the token when the transport
-    /// requires one.
+    /// requires one, then `sbt/attach` as a non-interactive client. Until a
+    /// client attaches, the channel's terminal is sbt's `NullTerminal` and
+    /// everything written to it (test-framework output, for one) is lost;
+    /// attaching installs a terminal that forwards it as `sbt/systemOut`.
     ///
     /// # Errors
     ///
-    /// sbt rejected the token, or the socket closed first.
+    /// sbt rejected the token or the attach, or the socket closed first.
     pub async fn initialize(self, token: Option<&Token>) -> Result<SbtSession, HandshakeError> {
+        self.request("initialize", initialize_params(token)).await?;
+        self.request("sbt/attach", attach_params()).await?;
+        Ok(SbtSession(self.0))
+    }
+
+    async fn request(&self, method: &str, params: Value) -> Result<Value, HandshakeError> {
         self.0
-            .request("initialize", initialize_params(token))
+            .request(method, params)
             .await
             .map_err(|error| match error {
                 RequestError::Rpc(rpc) => HandshakeError::Rejected(rpc),
                 RequestError::ConnectionClosed => HandshakeError::ConnectionClosed,
-            })?;
-        Ok(SbtSession(self.0))
+            })
     }
+}
+
+/// Non-interactive, like sbtn running a batch command: sbt then never asks
+/// us for stdin or shows a prompt, but still forwards the terminal.
+#[must_use]
+pub fn attach_params() -> Value {
+    json!({ "interactive": false })
 }
 
 #[must_use]
