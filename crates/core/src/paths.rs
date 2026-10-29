@@ -65,6 +65,13 @@ impl StateDir {
         self.0.join("sbtd.pid")
     }
 
+    /// Holds the address the running daemon actually bound, which matters
+    /// when it was started on port 0.
+    #[must_use]
+    pub fn addr_file(&self) -> PathBuf {
+        self.0.join("sbtd.addr")
+    }
+
     /// Where a detached daemon writes its stdout and stderr.
     #[must_use]
     pub fn log_file(&self) -> PathBuf {

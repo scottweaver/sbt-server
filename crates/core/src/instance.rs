@@ -162,6 +162,8 @@ pub enum StartError {
     Handshake(#[from] HandshakeError),
     #[error("sbt handshake timed out after {waited:?}")]
     HandshakeTimeout { waited: Duration },
+    #[error("the sbt start task ended without reporting an outcome")]
+    Vanished,
 }
 
 impl StartError {
@@ -174,7 +176,8 @@ impl StartError {
             | Self::Connect { .. }
             | Self::ConnectTimeout { .. }
             | Self::Handshake(_)
-            | Self::HandshakeTimeout { .. } => &[],
+            | Self::HandshakeTimeout { .. }
+            | Self::Vanished => &[],
         }
     }
 }
@@ -463,7 +466,8 @@ impl Boot<'_> {
         let path = self.root.active_json();
         let deadline = Instant::now() + self.timeouts.boot;
         loop {
-            if let Some(cause) = self.phase.borrow().death_cause().cloned() {
+            let died = self.phase.borrow().death_cause().cloned();
+            if let Some(cause) = died {
                 return Err(StartError::ProjectLoadFailed {
                     cause,
                     output: self.boot_output().await,

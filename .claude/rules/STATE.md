@@ -11,9 +11,10 @@ Last updated: 2026-10-29
 
 Rebuilding sbt-server from the hand-off in five phases, one local branch
 each, merged `--no-ff` into `main` (plan approved 2026-10-29; no remote and
-no pushes until the user says so). Phases 1 and 2 have landed. The core
-crate now holds the agent-facing `protocol.rs` DTOs, the JSON-RPC
-connection actor, `routing.rs`, `paths.rs`, and the whole instance layer:
+no pushes until the user says so). Phases 1, 2 and 3 have landed. The core
+crate holds the agent-facing `protocol.rs` DTOs, the JSON-RPC connection
+actor, `routing.rs`, `paths.rs`, `registry.rs` (shared boots, eviction of
+dead instances, idle reaper) and the whole instance layer:
 descriptor parsing, line assembly, notification translation (including
 sbt 1.x's `build/publishDiagnostics`), the synthesized completion line, the
 `Unauthenticated` to `SbtSession` typestate, the output router that owns
@@ -24,40 +25,45 @@ ARCHITECTURE.md: `--server` plus `SBT_TERMINAL_PROPS` so sbt adds no
 console channel (the alternative flags all flooded the raw pipes with
 prompt escapes or, for `--detach-stdio`, closed them). `crates/fake-sbt`
 now plays frames frozen from real captures, and its own integration test
-keeps its binary fresh under `cargo test --workspace`. 76 tests pass; the
-two `#[ignore]` live tests pass with `SBT_SERVER_LIVE=1`; fmt, `clippy
--D warnings` and `test` are green.
+keeps its binary fresh under `cargo test --workspace`. `crates/daemon` is
+`sbtd` on axum 0.8: `LoopbackAddr` bind, `/health`, `/status`, NDJSON
+`/exec`, `/shutdown`, pid and addr files, SIGTERM drain; smoke-tested live
+with curl against the fixture. 93 tests pass; the two `#[ignore]` live
+tests pass with `SBT_SERVER_LIVE=1`; fmt, `clippy -D warnings` and `test`
+are green.
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | Phases 1–2 merged; Phase 3 next |
+| `main` | trunk | Phases 1–3 merged; Phase 4 next |
 
 ## Next up
 
-1. **Phase 3 — `feat/daemon`**: `registry.rs` (`Slot::{Starting(watch),
-   Ready(Arc<Instance>)}`, detached boot task so a disconnecting caller
-   cannot drop a half-spawned child, eviction by `InstanceId` when
-   `Phase::Dead`, idle reaper on `Phase::Idle { since }`, default 2 h,
-   `0` disables), `sbtd` on axum 0.8 (`LoopbackAddr` newtype that refuses
-   non-loopback binds, `GET /health`, `GET /status`, `POST /exec` as
-   `application/x-ndjson`, `POST /shutdown`, JSON `ErrorResponse` with boot
-   output on `project_load_failed`, pid file, SIGTERM drain that ends
-   in-flight execs with `aborted: daemon_shutdown`), daemon integration
-   tests via `CARGO_BIN_EXE_sbtd` and `fake_sbt::bin_path()`. Doc edits:
-   axum replaces hand-rolled hyper, idle reaping, the HTTP contract.
-2. **Phase 4 — `feat/cli`**: `sbtctl` (passthrough, `-C`, `status`,
-   `shutdown [--all]`, `daemon start|stop|restart|status` polling
-   `/health`, `nix` kill; exit codes: sbt's clamped to 1..=124, 125 for
-   aborted or an unreachable daemon), cli tests against an in-test fake
-   daemon, `scripts/smoke.sh`. Doc edits: `nix` kill, the 125 convention.
-3. **Phase 5 — `chore/ci-and-state`**: `.github/workflows/ci.yml` (fmt,
+1. **Phase 4 — `feat/cli`**: `sbtctl` (passthrough via clap's external
+   subcommand, `-C`, `--daemon-url`/`SBTCTL_DAEMON_URL`, `--verbose`,
+   `status`, `shutdown [--all]`, `daemon start|stop|restart|status`; `start`
+   finds `sbtd` next to its own executable else on PATH and polls
+   `/health`; `stop` reads `sbtd.pid`, checks `/health` reports that pid,
+   sends SIGTERM through `nix` and polls until `/health` fails; exit codes:
+   sbt's clamped to 1..=124, 125 for `aborted` or an unreachable daemon),
+   cli tests against an in-test axum fake daemon, `scripts/smoke.sh`. Doc
+   edits: `nix` kill, the 125 convention.
+2. **Phase 5 — `chore/ci-and-state`**: `.github/workflows/ci.yml` (fmt,
    clippy, test), README usage, final STATE.md; then create the GitHub repo
    and push, only when the user says so.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — Phase 3: registry and daemon landed** (branch
+  `feat/daemon`, merged). Why: with the instance layer proven, the daemon
+  is a thin async shell around it, and writing the HTTP contract down in
+  ARCHITECTURE.md gives Phase 4's CLI a fixed target. Design points worth
+  knowing: boots run as detached tasks shared through a `watch` channel,
+  the reaper never touches a running instance, and SIGTERM drains every
+  instance before axum stops so streaming clients get `aborted:
+  daemon_shutdown`. Risk: `sbtd` has no auth beyond loopback (unchanged
+  from the hand-off), and the reaper interval is a one-minute constant.
 - **2026-10-29 — Phase 2: instance layer landed** (branch `feat/instance`,
   merged). Why: this is the part the hand-off had no tests for, and the
   part whose behaviour only live testing could settle; both are now
