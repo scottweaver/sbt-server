@@ -44,16 +44,16 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `2cdeeba` |
-| `feat/release-pipeline` | issue #5: license, one released package, cargo-dist, tap | PR open |
+| `main` | trunk | at `abf46d4`: release pipeline merged (PR #8); `v0.1.0` not yet tagged |
 
 ## Next up
 
-1. **Land #5 (release pipeline)**, then tag `v0.1.0` and watch the
-   release workflow; verify `brew install scottweaver/tap/sbt-server` on a
-   Mac. Two manual prerequisites: the public `scottweaver/homebrew-tap`
-   repository (with a README) and the `HOMEBREW_TAP_TOKEN` secret (a PAT
-   with `repo` scope) on this repository.
+1. **Tag `v0.1.0`** once the `HOMEBREW_TAP_TOKEN` secret (a PAT with
+   `repo` scope) is on this repository; the tap repository exists. The
+   tag triggers `release.yml`; cargo-dist publishes the release only after
+   the formula push succeeds, so tagging without the secret would strand
+   v0.1.0 as a failed draft. Then verify `brew install
+   scottweaver/tap/sbt-server` on a Mac.
 2. **#6 user docs under `docs/`**, then **#7 README rewrite**, each its own
    branch and PR. Every change goes issue, branch, push, PR with
    `Closes #N`, merge, then the post-merge routine.
@@ -67,16 +67,18 @@ are green.
 
 ## Most recent meaningful progress
 
-- **2026-10-29 — Release pipeline in flight (issue #5, branch
-  `feat/release-pipeline`).** Apache-2.0 chosen as the single license
+- **2026-10-29 — Release pipeline landed (issue #5, PR #8, merged at
+  `abf46d4`, CI green on both platforms with the release plan job
+  passing).** Apache-2.0 chosen as the single license
   (the permissive one companies accept most readily). cargo-dist releases
   per package and cannot bundle binaries across packages, so the daemon
   and CLI became library crates and a new `crates/sbt-server` package ships
   both binaries; the binary-spawning integration tests moved with them.
   `dist plan` shows one app with both binaries for the three targets, a
-  shell installer and a Homebrew formula. Risk: the Homebrew publish job
-  needs the tap repo and the `HOMEBREW_TAP_TOKEN` secret, both manual;
-  nothing has been tagged yet, so the release path is unexercised in CI.
+  shell installer and a Homebrew formula. The tap repository
+  `scottweaver/homebrew-tap` exists. Risk: the `HOMEBREW_TAP_TOKEN`
+  secret is still missing and nothing has been tagged, so the release
+  path is unexercised in CI.
 - **2026-10-29 — Fix: test-framework output was lost** (issues #1 and #2,
   PR #3, merged at `289384b`, CI green on ubuntu and macos). Found by the user on a real munit
   project right after the first install: `sbtctl test` printed only the
