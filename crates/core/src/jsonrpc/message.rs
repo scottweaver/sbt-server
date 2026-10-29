@@ -162,6 +162,14 @@ pub fn encode_request(id: RequestId, method: &str, params: &Value) -> Vec<u8> {
     .into_bytes()
 }
 
+/// A success response to a request the server sent us.
+#[must_use]
+pub fn encode_response(id: &Value, result: &Value) -> Vec<u8> {
+    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+        .to_string()
+        .into_bytes()
+}
+
 /// JSON-RPC "method not found" for a request the server sent us.
 #[must_use]
 pub fn encode_method_not_found(id: &Value, method: &str) -> Vec<u8> {

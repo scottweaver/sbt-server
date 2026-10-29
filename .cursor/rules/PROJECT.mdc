@@ -65,8 +65,8 @@ from `HANDOFF.md` before the git repo, remote, or state file existed.
 
 - **Tracker**: `github`, pre-filled as `scottweaver/sbt-server` with
   `#123`-style identifiers. The local repo was initialized on `main` on
-  2026-10-29; the GitHub repo and remote do not exist yet, and the
-  bindings are ready for when they land. Linear is deliberately not bound
+  2026-10-29 and pushed to `github.com/scottweaver/sbt-server` the same
+  day (`origin`). Linear is deliberately not bound
   here even though `LINEAR_API_KEY` resolves on this machine; the workspaces
   it reaches belong to other projects.
 - **State file**: `.claude/rules/STATE.md`, the rehydration document every

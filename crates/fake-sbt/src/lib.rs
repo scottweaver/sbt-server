@@ -24,6 +24,10 @@ const INITIALIZE: &str = include_str!("../fixtures/initialize.jsonl");
 const HAPPY: &str = include_str!("../fixtures/happy.jsonl");
 const FAILS: &str = include_str!("../fixtures/fails.jsonl");
 const SHUTDOWN: &str = include_str!("../fixtures/shutdown.jsonl");
+/// What sbt's `NetworkTerminal` sends right after an attach; the fake
+/// records the client's answer like any other message.
+const ATTACH_QUERY: &str =
+    r#"{"jsonrpc":"2.0","id":"terminal-1","method":"sbt/terminalPropertiesQuery","params":{}}"#;
 
 /// Environment variables the `fake-sbt` binary reads.
 pub const SCENARIO_ENV: &str = "FAKE_SBT_SCENARIO";
@@ -531,6 +535,14 @@ where
         match method {
             "initialize" => {
                 authenticated = handle_initialize(&mut io, &shared, &message, &id).await?;
+            }
+            "sbt/attach" => {
+                write_frame(
+                    &mut io,
+                    &json!({ "jsonrpc": "2.0", "id": id_text(&id), "result": "" }).to_string(),
+                )
+                .await?;
+                write_frame(&mut io, ATTACH_QUERY).await?;
             }
             "sbt/exec" if !authenticated => {
                 let text = "'sbt/exec' is not allowed before authentication.";

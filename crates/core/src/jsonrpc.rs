@@ -24,7 +24,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use self::framing::{FrameDecoder, encode_frame};
 pub use self::message::{Incoming, Notification, RequestId, RpcError};
-use self::message::{encode_method_not_found, encode_request, parse_incoming};
+use self::message::{encode_method_not_found, encode_request, encode_response, parse_incoming};
 
 /// A bidirectional socket of either transport sbt may publish in
 /// `active.json`.
@@ -35,6 +35,17 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin> Io for T {}
 pub type BoxedIo = Box<dyn Io>;
 
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// How to answer a request the server sends us: `Some(result)` replies with
+/// it, `None` replies "method not found". A plain function so the actor
+/// stays free of any sbt knowledge.
+pub type ServerRequestAnswerer = fn(&str, &Value) -> Option<Value>;
+
+/// Answer every server request with "method not found".
+#[must_use]
+pub fn decline_server_requests(_method: &str, _params: &Value) -> Option<Value> {
+    None
+}
 const OUTBOUND_QUEUE: usize = 64;
 
 /// # Errors
@@ -85,12 +96,16 @@ impl Connection {
     /// everything else the consumer sequences; a full channel applies
     /// backpressure to the socket rather than dropping anything.
     #[must_use]
-    pub fn open<N>(io: BoxedIo, notifications: mpsc::Sender<N>) -> Self
+    pub fn open<N>(
+        io: BoxedIo,
+        notifications: mpsc::Sender<N>,
+        answer: ServerRequestAnswerer,
+    ) -> Self
     where
         N: From<Notification> + Send + 'static,
     {
         let (outbound, inbox) = mpsc::channel(OUTBOUND_QUEUE);
-        tokio::spawn(Actor::new(io, inbox, notifications).run());
+        tokio::spawn(Actor::new(io, inbox, notifications, answer).run());
         Self {
             outbound,
             next_id: Arc::new(AtomicU64::new(1)),
@@ -133,6 +148,7 @@ struct Actor<N> {
     io: BoxedIo,
     inbox: mpsc::Receiver<Outbound>,
     notifications: mpsc::Sender<N>,
+    answer: ServerRequestAnswerer,
     pending: HashMap<RequestId, oneshot::Sender<Result<Value, RpcError>>>,
     decoder: FrameDecoder,
 }
@@ -143,11 +159,17 @@ enum Step {
 }
 
 impl<N: From<Notification>> Actor<N> {
-    fn new(io: BoxedIo, inbox: mpsc::Receiver<Outbound>, notifications: mpsc::Sender<N>) -> Self {
+    fn new(
+        io: BoxedIo,
+        inbox: mpsc::Receiver<Outbound>,
+        notifications: mpsc::Sender<N>,
+        answer: ServerRequestAnswerer,
+    ) -> Self {
         Self {
             io,
             inbox,
             notifications,
+            answer,
             pending: HashMap::new(),
             decoder: FrameDecoder::new(MAX_BODY_BYTES),
         }
@@ -242,9 +264,14 @@ impl<N: From<Notification>> Actor<N> {
                 }
                 Step::Continue
             }
-            Ok(Incoming::ServerRequest { id, method, .. }) => {
-                tracing::debug!(%method, "declining a server-initiated request");
-                self.write(&encode_method_not_found(&id, &method)).await
+            Ok(Incoming::ServerRequest { id, method, params }) => {
+                if let Some(result) = (self.answer)(&method, &params) {
+                    tracing::debug!(%method, "answering a server-initiated request");
+                    self.write(&encode_response(&id, &result)).await
+                } else {
+                    tracing::debug!(%method, "declining a server-initiated request");
+                    self.write(&encode_method_not_found(&id, &method)).await
+                }
             }
             Err(error) => {
                 tracing::warn!(%error, "ignoring an unparseable message from sbt");

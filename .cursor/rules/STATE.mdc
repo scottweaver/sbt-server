@@ -40,7 +40,8 @@ with curl against the fixture. `crates/cli` is `sbtctl`: passthrough,
 [--all]`, `daemon start|stop|restart|status` confirmed through `/health`,
 sbt's exit code clamped to 1..=124 and 125 reserved for tool failure.
 `.github/workflows/ci.yml` runs fmt, clippy and the tests on ubuntu and
-macos; `README.md` covers install and usage. 104 tests pass; the two
+macos; `README.md` covers install and usage. The remote
+`scottweaver/sbt-server` exists and `main` is pushed. 107 tests pass; the two
 `#[ignore]` live tests pass with `SBT_SERVER_LIVE=1`; `scripts/smoke.sh`
 passes end to end against real sbt; fmt, `clippy -D warnings` and `test`
 are green.
@@ -49,14 +50,12 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | all five phases merged; no remote yet |
+| `main` | trunk | all five phases merged and pushed; attach fix merged |
 
 ## Next up
 
-1. **Create `scottweaver/sbt-server` on GitHub and push `main`**, only
-   when the user says so; CI runs on the first push. PROJECT.md's GitHub
-   bindings are already in place. Decide a license before publishing
-   (none is declared).
+1. **Push the attach fix** when the user says so, and decide a license
+   before publicising the repo (none is declared).
 2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
    loopback; Windows (signals, process groups, named pipes); sbt 2.x
    (only 1.x's protocol has been exercised). Each is a design dialog plus
@@ -67,6 +66,24 @@ are green.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — Fix: test-framework output was lost** (issue #1, branch
+  `fix/attach-terminal-output`). Found by the user on a real munit
+  project right after the first install: `sbtctl test` printed only the
+  `[info] Passed:` summary. Cause: a channel's terminal is sbt's
+  `NullTerminal` until the client sends `sbt/attach`, and the test
+  framework writes its lines there. Fix: the handshake now attaches as a
+  non-interactive client (as sbtn does for batch commands), the client
+  answers sbt's terminal queries as a dumb 80x24 terminal, and, as sbtn
+  does, `build/logMessage` is dropped except at debug level because the
+  attached terminal stream carries the same lines rendered; lines with
+  sbt's `[level] ` prefix are parsed back into `log` events. Fixture
+  refrozen from an attached capture. The first CI run on `main` (ubuntu)
+  then exposed a second defect, fixed in the same PR: the child's exit was
+  reported before its pipes were drained, so a fast-dying sbt's last lines
+  (the ones that explain a failed project load) could be missing from
+  `project_load_failed` (issue #2). Risk: sbt's terminal queries are
+  answered generically; an sbt that asks something new would get "method
+  not found", and its `getCapability` has no timeout.
 - **2026-10-29 — Phase 5: CI, README, rebuild complete** (branch
   `chore/ci-and-state`, merged). Why: the workflow makes the three gates
   the repo already passes locally binding once a remote exists, and the
