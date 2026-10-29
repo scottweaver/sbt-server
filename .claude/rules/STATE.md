@@ -44,14 +44,19 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `289384b`: five phases plus PR #3; nothing in flight |
+| `main` | trunk | at `2cdeeba` |
+| `feat/release-pipeline` | issue #5: license, one released package, cargo-dist, tap | PR open |
 
 ## Next up
 
-1. **Decide a license** before publicising the repo (none is declared).
-   Every change from here on goes issue, branch, push, PR with
-   `Closes #N`, merge, then this post-merge routine; `main` is no longer
-   merged into locally.
+1. **Land #5 (release pipeline)**, then tag `v0.1.0` and watch the
+   release workflow; verify `brew install scottweaver/tap/sbt-server` on a
+   Mac. Two manual prerequisites: the public `scottweaver/homebrew-tap`
+   repository (with a README) and the `HOMEBREW_TAP_TOKEN` secret (a PAT
+   with `repo` scope) on this repository.
+2. **#6 user docs under `docs/`**, then **#7 README rewrite**, each its own
+   branch and PR. Every change goes issue, branch, push, PR with
+   `Closes #N`, merge, then the post-merge routine.
 2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
    loopback; Windows (signals, process groups, named pipes); sbt 2.x
    (only 1.x's protocol has been exercised). Each is a design dialog plus
@@ -62,6 +67,16 @@ are green.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — Release pipeline in flight (issue #5, branch
+  `feat/release-pipeline`).** Apache-2.0 chosen as the single license
+  (the permissive one companies accept most readily). cargo-dist releases
+  per package and cannot bundle binaries across packages, so the daemon
+  and CLI became library crates and a new `crates/sbt-server` package ships
+  both binaries; the binary-spawning integration tests moved with them.
+  `dist plan` shows one app with both binaries for the three targets, a
+  shell installer and a Homebrew formula. Risk: the Homebrew publish job
+  needs the tap repo and the `HOMEBREW_TAP_TOKEN` secret, both manual;
+  nothing has been tagged yet, so the release path is unexercised in CI.
 - **2026-10-29 — Fix: test-framework output was lost** (issues #1 and #2,
   PR #3, merged at `289384b`, CI green on ubuntu and macos). Found by the user on a real munit
   project right after the first install: `sbtctl test` printed only the

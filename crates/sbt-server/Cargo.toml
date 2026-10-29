@@ -1,0 +1,36 @@
+[package]
+name = "sbt-server"
+description = "Warm sbt per project for agent-driven builds: the sbtd daemon and the sbtctl CLI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "sbtd"
+path = "src/bin/sbtd.rs"
+
+[[bin]]
+name = "sbtctl"
+path = "src/bin/sbtctl.rs"
+
+[dependencies]
+anyhow.workspace = true
+sbt-server-cli.workspace = true
+sbt-server-daemon.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+fake-sbt.workspace = true
+reqwest.workspace = true
+sbt-server-core.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio-stream.workspace = true
+
+[lints]
+workspace = true

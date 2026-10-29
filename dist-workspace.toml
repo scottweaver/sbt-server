@@ -1,0 +1,23 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist' (cargo-dist): how sbt-server is built and released.
+# `dist init` and `dist generate` keep .github/workflows/release.yml in sync
+# with this file; edit here, then run `dist generate`.
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app: a `curl | sh` script attached to
+# each release, and a Homebrew formula pushed to the tap below.
+installers = ["shell", "homebrew"]
+# `brew install scottweaver/tap/sbt-server`
+tap = "scottweaver/homebrew-tap"
+publish-jobs = ["homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax). macOS is
+# the supported platform; the Linux archive ships because CI proves it and
+# Linux support comes later; Windows is out of scope for good.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+# On pull requests only plan the release; build nothing.
+pr-run-mode = "plan"
