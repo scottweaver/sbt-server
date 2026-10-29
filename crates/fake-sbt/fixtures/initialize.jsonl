@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"{{ID}}","result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":0,"willSave":false,"willSaveWaitUntil":false,"save":{"includeText":false}},"hoverProvider":false,"definitionProvider":false}}}

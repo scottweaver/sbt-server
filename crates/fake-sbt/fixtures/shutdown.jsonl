@@ -1,0 +1,4 @@
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"shutting down sbt server"}}
+{"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":[],"exitCode":0}}
+{"jsonrpc":"2.0","method":"shutdown","params":{}}

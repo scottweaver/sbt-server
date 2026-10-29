@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"/tmp/hello/src/main/scala/Hello.scala:3:5: not found: value foo"}}
+{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala","diagnostics":[{"range":{"start":{"line":2,"character":4},"end":{"line":2,"character":7}},"severity":1,"source":"sbt","message":"not found: value foo"}]}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"(Compile / compileIncremental) Compilation failed"}}
+{"jsonrpc":"2.0","id":"{{ID}}","error":{"code":{{CODE}},"message":""}}

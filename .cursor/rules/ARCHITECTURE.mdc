@@ -50,11 +50,13 @@ section.
 Rust workspace, three members:
 
 ```
-Cargo.toml                      workspace (3 members)
+Cargo.toml                      workspace (3 shipped members + a test double)
 crates/
   core/   sbt-server-core (lib, no binary)
     src/instance.rs    owns one warm sbt process + its JSON-RPC connection
     src/jsonrpc.rs     transport-generic JSON-RPC 2.0 client (TCP or Unix socket)
+    src/jsonrpc/       framing.rs (LSP framing codec) and message.rs (message
+                       shapes): pure, unit-tested without IO
     src/registry.rs    build-root -> warm Instance map, lazy-start, shutdown
     src/routing.rs     cwd -> build root resolution (walks up for build.sbt /
                        project/build.properties)
@@ -62,6 +64,9 @@ crates/
     src/paths.rs       shared state dir (~/.config/sbt-server)
   daemon/ sbtd (bin)   hand-rolled hyper 1.x HTTP server wrapping Registry
   cli/    sbtctl (bin) agent-facing client; clap + reqwest
+  fake-sbt/            dev-only scripted stand-in for sbt's server (lib + bin,
+                       publish = false, never shipped); plays frozen literal
+                       frames from fixtures/*.jsonl so tests need no JVM
 ```
 
 - **Language/runtime: Rust on tokio async**, chosen for a single static
@@ -192,8 +197,8 @@ Files whose changes warrant re-checking this doc during wrap-up:
 
 - `crates/core/src/instance.rs` (takeover-on-start, bounded shutdown,
   output fan-in, synthesized completion line, `parse_server_uri`)
-- `crates/core/src/jsonrpc.rs` (transport abstraction, framing,
-  `initialize` handshake, token handling)
+- `crates/core/src/jsonrpc.rs`, `crates/core/src/jsonrpc/**` (transport
+  abstraction, framing, `initialize` handshake, token handling)
 - `crates/core/src/registry.rs` (instance map, lazy-start, per-instance
   serialization guard)
 - `crates/core/src/routing.rs` (build-root resolution)
