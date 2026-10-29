@@ -50,19 +50,19 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `abf46d4`: release pipeline merged (PR #8); `v0.1.0` not yet tagged |
+| `main` | trunk | at `66a6c08`, tagged `v0.1.0` and released |
 
 ## Next up
 
-1. **Tag `v0.1.0`** once the `HOMEBREW_TAP_TOKEN` secret (a PAT with
-   `repo` scope) is on this repository; the tap repository exists. The
-   tag triggers `release.yml`; cargo-dist publishes the release only after
-   the formula push succeeds, so tagging without the secret would strand
-   v0.1.0 as a failed draft. Then verify `brew install
-   scottweaver/tap/sbt-server` on a Mac.
-2. **#6 user docs under `docs/`**, then **#7 README rewrite**, each its own
+1. **#6 user docs under `docs/`**, then **#7 README rewrite**, each its own
    branch and PR. Every change goes issue, branch, push, PR with
-   `Closes #N`, merge, then the post-merge routine.
+   `Closes #N`, merge, then the post-merge routine. The install command
+   they document is real now: `brew install scottweaver/tap/sbt-server`,
+   or the `sbt-server-installer.sh` attached to each release.
+2. **Releasing again** is: bump the workspace version, merge, push a `v*`
+   tag. The `HOMEBREW_TAP_TOKEN` secret is a fine-grained PAT scoped to
+   the tap with Contents read/write; when it expires only the formula
+   push fails.
 2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
    loopback; Windows (signals, process groups, named pipes); sbt 2.x
    (only 1.x's protocol has been exercised). Each is a design dialog plus
@@ -73,6 +73,14 @@ are green.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — v0.1.0 released.** Tag `v0.1.0` on `66a6c08`; the
+  release workflow passed every job, the release carries the three
+  archives, checksums, `sbt-server-installer.sh` and the formula, and the
+  formula landed in `scottweaver/homebrew-tap`. Verified on this Mac:
+  `brew install scottweaver/tap/sbt-server` put 0.1.0 under
+  `/opt/homebrew/bin`, and `sbtctl test` on a real munit project ran
+  through it. Risk: only macOS arm64 was exercised by hand; the x86_64
+  macOS and Linux archives are built and checksummed but untried.
 - **2026-10-29 — Release pipeline landed (issue #5, PR #8, merged at
   `abf46d4`, CI green on both platforms with the release plan job
   passing).** Apache-2.0 chosen as the single license
