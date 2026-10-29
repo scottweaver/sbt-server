@@ -66,7 +66,7 @@ are green.
 
 ## Most recent meaningful progress
 
-- **2026-10-29 — Fix: test-framework output was lost** (branch
+- **2026-10-29 — Fix: test-framework output was lost** (issue #1, branch
   `fix/attach-terminal-output`). Found by the user on a real munit
   project right after the first install: `sbtctl test` printed only the
   `[info] Passed:` summary. Cause: a channel's terminal is sbt's
