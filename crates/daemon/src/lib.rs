@@ -21,8 +21,21 @@ use crate::server::AppState;
 
 const REAPER_INTERVAL: Duration = Duration::from_mins(1);
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// Run the daemon to completion on its own Tokio runtime.
+///
+/// # Errors
+///
+/// The runtime cannot be built, the state directory or the listener cannot
+/// be prepared, or serving fails.
+pub fn run() -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("cannot start the async runtime")?
+        .block_on(serve())
+}
+
+async fn serve() -> anyhow::Result<()> {
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_env_filter(

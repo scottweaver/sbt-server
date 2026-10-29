@@ -774,6 +774,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "sbt-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "fake-sbt",
+ "reqwest",
+ "sbt-server-cli",
+ "sbt-server-core",
+ "sbt-server-daemon",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "sbt-server-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "nix",
+ "reqwest",
+ "sbt-server-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "sbt-server-core"
 version = "0.1.0"
 dependencies = [
@@ -788,35 +820,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "sbtctl"
-version = "0.1.0"
-dependencies = [
- "axum",
- "clap",
- "nix",
- "reqwest",
- "sbt-server-core",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "sbtd"
+name = "sbt-server-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "bytes",
  "clap",
- "fake-sbt",
- "reqwest",
  "sbt-server-core",
  "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

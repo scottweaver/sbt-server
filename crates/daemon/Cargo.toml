@@ -1,9 +1,13 @@
 [package]
-name = "sbtd"
+name = "sbt-server-daemon"
 description = "Keeps one warm sbt server per build root and exposes it to agents over loopback HTTP"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -17,11 +21,6 @@ tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread"
 tokio-stream.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-
-[dev-dependencies]
-fake-sbt.workspace = true
-reqwest.workspace = true
-tempfile.workspace = true
 
 [lints]
 workspace = true

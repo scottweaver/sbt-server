@@ -32,11 +32,27 @@ enum CliError {
     Paths(#[from] PathsError),
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Run sbtctl to completion on its own Tokio runtime; the result is the
+/// process exit code.
+#[must_use]
+pub fn run() -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("sbtctl: cannot start the async runtime: {error}");
+            return ExitCode::from(render::TOOL_FAILURE);
+        }
+    };
+    runtime.block_on(entry())
+}
+
+async fn entry() -> ExitCode {
     let cli = Cli::parse();
     let client = DaemonClient::new(&cli.daemon_url);
-    match run(cli, &client).await {
+    match dispatch(cli, &client).await {
         Ok(code) => code,
         Err(error) => {
             report(&error);
@@ -61,7 +77,7 @@ fn report(error: &CliError) {
     }
 }
 
-async fn run(cli: Cli, client: &DaemonClient) -> Result<ExitCode, CliError> {
+async fn dispatch(cli: Cli, client: &DaemonClient) -> Result<ExitCode, CliError> {
     match cli.command {
         Command::Sbt(ref words) => exec(client, cwd(&cli)?, words, cli.verbose).await,
         Command::Status => {

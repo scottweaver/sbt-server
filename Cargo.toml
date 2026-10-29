@@ -1,11 +1,21 @@
 [workspace]
 resolver = "3"
-members = ["crates/cli", "crates/core", "crates/daemon", "crates/fake-sbt"]
+members = [
+    "crates/cli",
+    "crates/core",
+    "crates/daemon",
+    "crates/fake-sbt",
+    "crates/sbt-server",
+]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
+license = "Apache-2.0"
+repository = "https://github.com/scottweaver/sbt-server"
+homepage = "https://github.com/scottweaver/sbt-server"
+authors = ["Scott T Weaver"]
 
 [workspace.dependencies]
 anyhow = "1"
@@ -24,10 +34,17 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 fake-sbt = { path = "crates/fake-sbt" }
+sbt-server-cli = { path = "crates/cli" }
 sbt-server-core = { path = "crates/core" }
+sbt-server-daemon = { path = "crates/daemon" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
