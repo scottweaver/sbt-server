@@ -1,0 +1,80 @@
+---
+# Project skill bindings — consumed by ~/.claude/skills/daily-stand-up and ~/.claude/skills/wrap-up.
+# Hand-edited rule file; the portable skills are project-agnostic, all the per-project values live here.
+# Schema source of truth: ~/.claude/skills/bootstrap-project/SKILL.md
+
+tracker: github
+
+# Linear bindings (required when tracker: linear; ignored otherwise;
+# commented out because tracker: github; sbt-server is a personal project and
+# deliberately binds no Linear workspace).
+# linear:
+#   workspace: <slug>
+#   team_prefix: <PREFIX>
+#   assignee_id: <uuid>
+#   state_uuids:
+#     in_progress: <uuid>
+#     in_review:   <uuid>
+#     done:        <uuid>
+
+# GitHub bindings (required when tracker: github; ignored otherwise).
+github:
+  owner: scottweaver
+  repo:  sbt-server
+  assignee: scottweaver
+
+# Project state file consumed by daily-stand-up (T discovery) and wrap-up (step-4 refresh).
+# Set state_file.path to null to disable both behaviours.
+state_file:
+  path: .claude/rules/STATE.md
+  next_up_patterns:
+    - "**Next: {ID}**"
+    - "**next up: {ID}**"
+    - "Next up in Phase N: {ID}"
+
+# Stand-up-only settings — commented out: personal project, no stand-ups.
+# Uncomment (and pick a sentinel) if daily-stand-up is ever used here.
+# standup:
+#   no_blockers_sentinel: ":none:"
+#   # email_to: <address>           # uncomment to have daily-stand-up offer email delivery
+
+# Wrap-up-only settings.
+wrapup:
+  docs_pr_branch_prefix: docs/state-post-
+  docs_pr_commit_prefix: "docs(state):"
+  auto_merge_carve_out_path: .claude/rules/
+  state_refresh_authority: .claude/rules/METHODOLOGIES.md
+  audit_doc:
+    path: .claude/rules/ARCHITECTURE.md
+    trigger_checklist_section: "Audit triggers"
+    structural_criteria_section: "Structural criteria"
+---
+
+# Project bindings — sbt-server
+
+sbt-server: a local daemon (`sbtd`) that keeps one warm sbt server process
+per project, plus an agent-facing CLI (`sbtctl`) that reaches it over
+loopback HTTP only. Rust workspace, three crates. Bootstrapped 2026-10-29
+from `HANDOFF.md` before the git repo, remote, or state file existed.
+
+- **Tracker**: `github`, pre-filled as `scottweaver/sbt-server` with
+  `#123`-style identifiers. The local repo was initialized on `main` on
+  2026-10-29; the GitHub repo and remote do not exist yet, and the
+  bindings are ready for when they land. Linear is deliberately not bound
+  here even though `LINEAR_API_KEY` resolves on this machine; the workspaces
+  it reaches belong to other projects.
+- **State file**: `.claude/rules/STATE.md`, the rehydration document every
+  session reads first (created by `/bootstrap-agent-rules` on 2026-10-29).
+  With `tracker: github`, `{ID}` in the next-up patterns matches `#\d+`.
+- **Stand-up**: not used — personal project. The `standup:` block is
+  commented out above so the defaults stay discoverable.
+- **Wrap-up**: stock defaults. `state_refresh_authority` is
+  `.claude/rules/METHODOLOGIES.md` ("After a PR merges"), installed by
+  `/bootstrap-agent-rules` on 2026-10-29. `wrapup.audit_doc` = `.claude/rules/ARCHITECTURE.md`, the
+  living architecture document converted from `HANDOFF.md` on 2026-10-29,
+  with `trigger_checklist_section: "Audit triggers"` and
+  `structural_criteria_section: "Structural criteria"` — wrap-up step 5
+  cross-references merged-PR file lists against those sections.
+  `HANDOFF.md` itself stays at the project root as the frozen verbatim
+  transcript and is never the audit target.
+- No `agent_sync` block — the project has no rules-sync script.

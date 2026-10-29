@@ -1,0 +1,92 @@
+---
+alwaysApply: true
+---
+
+# DO NOT EDIT — generated from .claude/rules by agent-sync
+
+# Project State
+
+The rehydration document. Any agent starting a session reads this
+first to learn where the project stands right now. It answers "where
+are we" — never "how does this work" (that's ARCHITECTURE.md and the
+code) and never "how should we work" (that's METHODOLOGIES.md).
+
+Last updated: 2026-10-29
+
+## Active workstream
+
+Greenfield re-establishment of sbt-server from a development hand-off. The
+original workspace (three Rust crates: `sbt-server-core`, `sbtd`, `sbtctl`)
+was built and live-tested on another machine and handed over as a
+five-photo HANDOFF.md, now transcribed verbatim at the project root and
+converted into the binding constraints in ARCHITECTURE.md. This checkout
+holds only the rules layer: no Cargo workspace, no source, no commits yet.
+Binding decisions already made: agents reach `sbtd` over loopback HTTP only;
+`sbtd` drives sbt via its own JSON-RPC protocol (not BSP/LSP) through a
+transport-generic client; `Instance::start` always takes over a pre-existing
+`active.json`; shutdown is bounded; raw stdout/stderr is captured alongside
+JSON-RPC notifications; the completion line is synthesized because sbt never
+sends its banner to clients. Tracker is GitHub Issues
+(`scottweaver/sbt-server`); the GitHub repo does not exist yet.
+
+## Branches in flight
+
+| Branch | Purpose | Status |
+|---|---|---|
+| `main` | trunk | freshly initialized, no commits yet |
+
+## Next up
+
+1. Commit the rules layer and HANDOFF.md as the initial commit; create the
+   GitHub repo and push.
+2. Scaffold the Cargo workspace per ARCHITECTURE.md "Workspace layout":
+   `crates/core` (`sbt-server-core`), `crates/daemon` (`sbtd`),
+   `crates/cli` (`sbtctl`) on hyper 1.x + tokio + clap + reqwest.
+3. Re-implement the core in the order the hand-off's gotchas were hit:
+   transport-generic JSON-RPC client with optional token, then
+   takeover-on-start and bounded shutdown, then raw-output fan-in and the
+   synthesized completion line, then status-ping filtering.
+4. Close the hand-off's biggest open item: automated tests for
+   `instance.rs`'s sbt-facing logic (handshake, exec, shutdown), not just
+   `routing.rs`.
+
+## Most recent meaningful progress
+
+- **2026-10-29 — Rules layer bootstrapped.** HANDOFF.md transcribed from
+  five Drive photos (255 gutter lines, checked line for line), converted
+  into ARCHITECTURE.md, and the standard agent-rules layer installed:
+  CLAUDE.md/AGENTS.md, METHODOLOGIES.md, RUST_BEST_PRACTICES.md, PROJECT.md
+  bound to GitHub Issues with ARCHITECTURE.md as the wrap-up audit doc.
+  Why: the project arrives as prose only; the rules layer makes every
+  constraint from the first build binding before any code is rewritten.
+  Risk: no source exists in this checkout, so ARCHITECTURE.md describes a
+  build that must be reproduced faithfully — drift between the doc and the
+  rebuilt code is the main hazard until tests exist.
+
+## Blocked / waiting
+
+- *(nothing)*
+
+## Maintenance
+
+- **Refresh trigger:** any merge or milestone that changes what an
+  incoming agent needs to know: workstream shifts, a branch opens or
+  closes, "Next up" changes, something lands. Wired into
+  METHODOLOGIES.md's post-merge routine (the "refresh STATE.md"
+  step).
+- **Always update:** "Last updated"; "Branches in flight"; prepend a
+  progress entry (what / why / risk voice — a judgment edit, not a
+  paste of the PR description).
+- **As applicable:** "Active workstream" paragraph, "Next up",
+  "Blocked / waiting".
+- **Trim policy:** progress log holds at most 10 entries — drop the
+  oldest when adding. Anything stable graduates out of this file
+  into the appropriate rules doc; this file stays small because
+  every agent loads it every turn.
+- **Edit policy:** STATE.md is authored on feature branches,
+  propagates through merges, and is refreshed (not deleted) on new
+  branches. Never edit it directly on `main`; docs-only diffs under
+  `.claude/rules/` ride the METHODOLOGIES.md docs-only carve-out.
+- **Keep entries short:** each progress entry is a pointer — date,
+  PR #, ticket, a sentence or two of judgment. If you're tempted to
+  write more, the detail belongs in the PR, commit, or ticket.
