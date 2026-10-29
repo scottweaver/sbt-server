@@ -1,9 +1,17 @@
+# Frozen from sbt 1.11.7 on 2026-10-29: a cold `compile` of tests/fixtures/hello-sbt, paths rewritten to /tmp/hello.
+# Eleven of the twelve build/taskProgress frames were dropped for brevity.
 {"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+# Synthetic: sbt sends terminal queries only to attached clients; kept so the client's refusal path stays covered.
 {"jsonrpc":"2.0","id":"srv-1","method":"sbt/terminalPropertiesQuery","params":{}}
+{"jsonrpc":"2.0","method":"build/taskStart","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306502472,"message":"Compiling root","dataKind":"compile-task","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
 {"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"compiling 1 Scala source to /tmp/hello/target/scala-2.13/classes ..."}}
+{"jsonrpc":"2.0","method":"build/taskProgress","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306503354,"message":"Compiling root (15%)","total":26,"progress":15,"dataKind":"compile-progress","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+# Composed from sbt's source (sbt/systemOut carries Seq[Byte]); this fixture project prints nothing itself.
 {"jsonrpc":"2.0","method":"sbt/systemOut","params":[104,101,108,108,111,32,102,114,111,109,32]}
 {"jsonrpc":"2.0","method":"sbt/systemOut","params":[112,114,105,110,116,108,110,10]}
 {"jsonrpc":"2.0","method":"sbt/systemOutFlush","params":{}}
-{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala","diagnostics":[]}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":2,"message":"there was one deprecation warning; re-run with -deprecation for details"}}
-{"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":[],"exitCode":0}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"done compiling"}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[],"reset":true}}
+{"jsonrpc":"2.0","method":"build/taskFinish","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793306503789,"message":"Compiled root","status":1,"dataKind":"compile-report","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"},"errors":0,"warnings":0,"time":1317}}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+{"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":["shell"],"exitCode":0}}

@@ -1,5 +1,17 @@
+# Frozen from sbt 1.11.7 on 2026-10-29: `compile` with a type error in Broken.scala, paths rewritten to /tmp/hello.
+# sbt sends the failure as a JSON-RPC error (code -32603, message kept verbatim); {{CODE}} is the scenario's exit code.
 {"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"/tmp/hello/src/main/scala/Hello.scala:3:5: not found: value foo"}}
-{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala","diagnostics":[{"range":{"start":{"line":2,"character":4},"end":{"line":2,"character":7}},"severity":1,"source":"sbt","message":"not found: value foo"}]}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"(Compile / compileIncremental) Compilation failed"}}
-{"jsonrpc":"2.0","id":"{{ID}}","error":{"code":{{CODE}},"message":""}}
+{"jsonrpc":"2.0","method":"build/taskStart","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793307067475,"message":"Compiling root","dataKind":"compile-task","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"compiling 2 Scala sources to /tmp/hello/target/scala-2.13/classes ..."}}
+{"jsonrpc":"2.0","method":"build/taskProgress","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793307068206,"message":"Compiling root (5%)","total":52,"progress":5,"dataKind":"compile-progress","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Broken.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[{"range":{"start":{"line":1,"character":15},"end":{"line":1,"character":27}},"severity":1,"source":"sbt","message":"type mismatch;\n found   : String(\"not an int\")\n required: Int","relatedInformation":[]}],"reset":false}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"/tmp/hello/src/main/scala/Broken.scala:2:16: type mismatch;\n found   : String(\"not an int\")\n required: Int"}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"  val n: Int = \"not an int\""}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"               ^"}}
+{"jsonrpc":"2.0","method":"build/taskProgress","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793307068364,"message":"Compiling root (15%)","total":52,"progress":15,"dataKind":"compile-progress","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+{"jsonrpc":"2.0","method":"build/taskProgress","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793307068366,"message":"Compiling root (15%)","total":52,"progress":15,"dataKind":"compile-progress","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"}}}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":1,"message":"one error found"}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[],"reset":true}}
+{"jsonrpc":"2.0","method":"build/publishDiagnostics","params":{"textDocument":{"uri":"file:///tmp/hello/src/main/scala/Broken.scala"},"buildTarget":{"uri":"file:/tmp/hello/#root/Compile"},"diagnostics":[{"range":{"start":{"line":1,"character":15},"end":{"line":1,"character":27}},"severity":1,"source":"sbt","message":"type mismatch;\n found   : String(\"not an int\")\n required: Int","relatedInformation":[]}],"reset":true}}
+{"jsonrpc":"2.0","method":"build/taskFinish","params":{"taskId":{"id":"1","parents":[]},"eventTime":1793307068373,"message":"Compiled root","status":2,"dataKind":"compile-report","data":{"target":{"uri":"file:/tmp/hello/#root/Compile"},"errors":1,"warnings":0,"time":898}}}
+{"jsonrpc":"2.0","id":"{{ID}}","error":{"code":{{CODE}},"message":"(Compile / compileIncremental) Compilation failed"}}

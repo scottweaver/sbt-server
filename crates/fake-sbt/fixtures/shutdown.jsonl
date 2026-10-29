@@ -1,4 +1,3 @@
+# Frozen from sbt 1.11.7 on 2026-10-29: `sbt/exec` of `shutdown`. sbt never answers the request; it announces and closes.
 {"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
-{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"shutting down sbt server"}}
-{"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":[],"exitCode":0}}
-{"jsonrpc":"2.0","method":"shutdown","params":{}}
+{"jsonrpc":"2.0","method":"shutdown","params":[false,null]}

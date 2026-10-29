@@ -80,10 +80,15 @@ enum Outbound {
 
 impl Connection {
     /// Start the actor over an open socket. Every notification the server
-    /// sends is delivered, in order, to `notifications`; a full channel
-    /// applies backpressure to the socket rather than dropping anything.
+    /// sends is delivered, in order, to `notifications`, converted into the
+    /// consumer's own message type so it can share one FIFO channel with
+    /// everything else the consumer sequences; a full channel applies
+    /// backpressure to the socket rather than dropping anything.
     #[must_use]
-    pub fn open(io: BoxedIo, notifications: mpsc::Sender<Notification>) -> Self {
+    pub fn open<N>(io: BoxedIo, notifications: mpsc::Sender<N>) -> Self
+    where
+        N: From<Notification> + Send + 'static,
+    {
         let (outbound, inbox) = mpsc::channel(OUTBOUND_QUEUE);
         tokio::spawn(Actor::new(io, inbox, notifications).run());
         Self {
@@ -124,10 +129,10 @@ impl Connection {
     }
 }
 
-struct Actor {
+struct Actor<N> {
     io: BoxedIo,
     inbox: mpsc::Receiver<Outbound>,
-    notifications: mpsc::Sender<Notification>,
+    notifications: mpsc::Sender<N>,
     pending: HashMap<RequestId, oneshot::Sender<Result<Value, RpcError>>>,
     decoder: FrameDecoder,
 }
@@ -137,12 +142,8 @@ enum Step {
     Stop,
 }
 
-impl Actor {
-    fn new(
-        io: BoxedIo,
-        inbox: mpsc::Receiver<Outbound>,
-        notifications: mpsc::Sender<Notification>,
-    ) -> Self {
+impl<N: From<Notification>> Actor<N> {
+    fn new(io: BoxedIo, inbox: mpsc::Receiver<Outbound>, notifications: mpsc::Sender<N>) -> Self {
         Self {
             io,
             inbox,
@@ -231,7 +232,12 @@ impl Actor {
                 Step::Continue
             }
             Ok(Incoming::Notification(notification)) => {
-                if self.notifications.send(notification).await.is_err() {
+                if self
+                    .notifications
+                    .send(N::from(notification))
+                    .await
+                    .is_err()
+                {
                     tracing::trace!("notification consumer is gone");
                 }
                 Step::Continue

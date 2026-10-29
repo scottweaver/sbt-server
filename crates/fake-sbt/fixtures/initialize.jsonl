@@ -1,1 +1,2 @@
-{"jsonrpc":"2.0","id":"{{ID}}","result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":0,"willSave":false,"willSaveWaitUntil":false,"save":{"includeText":false}},"hoverProvider":false,"definitionProvider":false}}}
+# Frozen from sbt 1.11.7 on 2026-10-29: the reply to `initialize` over the local transport.
+{"jsonrpc":"2.0","id":"{{ID}}","result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":0,"willSave":false,"willSaveWaitUntil":false,"save":{"includeText":false}},"hoverProvider":false,"definitionProvider":true}}}

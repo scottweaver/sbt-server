@@ -5,6 +5,7 @@
 //! locates the daemon's state directory; `protocol` is the agent-facing HTTP
 //! contract. Binding constraints live in `.claude/rules/ARCHITECTURE.md`.
 
+pub mod instance;
 pub mod jsonrpc;
 pub mod paths;
 pub mod protocol;
