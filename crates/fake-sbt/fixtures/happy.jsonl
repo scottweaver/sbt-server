@@ -1,0 +1,9 @@
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":4,"message":"Processing sbt/exec"}}
+{"jsonrpc":"2.0","id":"srv-1","method":"sbt/terminalPropertiesQuery","params":{}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":3,"message":"compiling 1 Scala source to /tmp/hello/target/scala-2.13/classes ..."}}
+{"jsonrpc":"2.0","method":"sbt/systemOut","params":[104,101,108,108,111,32,102,114,111,109,32]}
+{"jsonrpc":"2.0","method":"sbt/systemOut","params":[112,114,105,110,116,108,110,10]}
+{"jsonrpc":"2.0","method":"sbt/systemOutFlush","params":{}}
+{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///tmp/hello/src/main/scala/Hello.scala","diagnostics":[]}}
+{"jsonrpc":"2.0","method":"build/logMessage","params":{"type":2,"message":"there was one deprecation warning; re-run with -deprecation for details"}}
+{"jsonrpc":"2.0","id":"{{ID}}","result":{"status":"Done","channelName":"network-1","execId":"{{ID}}","commandQueue":[],"exitCode":0}}

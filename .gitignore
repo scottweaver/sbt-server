@@ -1,0 +1,6 @@
+/target/
+**/target/
+**/project/project/
+.bsp/
+.claude/worktrees/
+.DS_Store
