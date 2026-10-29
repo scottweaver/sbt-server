@@ -9,4 +9,5 @@ pub mod instance;
 pub mod jsonrpc;
 pub mod paths;
 pub mod protocol;
+pub mod registry;
 pub mod routing;

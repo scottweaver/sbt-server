@@ -38,6 +38,10 @@ section.
   HTTP to `sbtd`.**
 - **No auth on `sbtd`'s HTTP API beyond binding strictly to loopback.**
   Accepted for a localhost dev tool; not revisited since.
+- **`sbtd` cannot be told to bind anything but a loopback address:**
+  `--bind` parses into a `LoopbackAddr` newtype (default `127.0.0.1:8077`,
+  port 0 allowed), so the invariant above holds by construction rather than
+  by configuration.
 
 ## Workspace layout
 
@@ -58,7 +62,7 @@ crates/
                        project/build.properties)
     src/protocol.rs    HTTP request/response DTOs shared by daemon+cli
     src/paths.rs       shared state dir (~/.config/sbt-server)
-  daemon/ sbtd (bin)   hand-rolled hyper 1.x HTTP server wrapping Registry
+  daemon/ sbtd (bin)   axum 0.8 HTTP server wrapping Registry; src/{config,server,main}.rs
   cli/    sbtctl (bin) agent-facing client; clap + reqwest
   fake-sbt/            dev-only scripted stand-in for sbt's server (lib + bin,
                        publish = false, never shipped); plays frozen literal
@@ -67,10 +71,11 @@ crates/
 
 - **Language/runtime: Rust on tokio async**, chosen for a single static
   binary and strong async process supervision.
-- **HTTP server is hand-rolled on `hyper` 1.x + `hyper-util` +
-  `http-body-util`, not `axum`.** `axum` was absent from the offline cargo
-  cache when this was built; swap back to `axum` if that is ever not a
-  constraint. Build/test is `cargo build` / `cargo test`, offline-capable.
+- **HTTP server is `axum` 0.8 on tokio.** The first build hand-rolled it on
+  `hyper` 1.x only because `axum` was absent from that machine's offline
+  cargo cache, and invited the swap once that was not a constraint; the
+  rebuild (2026-10-29) took it. `/exec` streams through
+  `Body::from_stream`. Build/test is `cargo build` / `cargo test`.
 - **`protocol.rs` DTOs are the agent-facing contract** shared by daemon and
   CLI.
 
@@ -157,6 +162,23 @@ crates/
   task runs to sbt's terminal reply even when the caller's output receiver
   is dropped, so a disconnecting HTTP client can never leave sbt busy with
   the lock free.
+- **One boot per build root, shared by concurrent callers.** `Registry`
+  keeps `BuildRoot → Slot::{Starting(watch), Ready(Arc<Instance>)}`. The
+  first caller spawns the boot as a detached task, so a caller that
+  disconnects mid-boot can never drop a half-spawned child, and every
+  caller arriving during it waits on the same channel and shares the same
+  outcome. A failed boot clears the slot so the next call retries. A dead
+  instance (`Phase::Dead`) is omitted from `/status` and replaced on the
+  next call for its build root.
+- **Idle instances are reaped.** A reaper task (every minute) shuts down
+  instances idle longer than `--idle-timeout-secs` (default 7200; `0`
+  disables) and evicts dead ones; a running instance is never reaped.
+  Added in the rebuild; the hand-off had left it open.
+- **`sbtd` drains on SIGTERM or SIGINT.** It shuts every instance down
+  (bounded) before letting axum stop, so in-flight `/exec` streams end with
+  `aborted: daemon_shutdown` instead of hanging. It writes `sbtd.pid` and
+  `sbtd.addr` (the address actually bound) into the state dir on start and
+  removes them on exit.
 - **The daemon-action path is `async fn` end to end** (gotcha 7). Never
   spin up a second Tokio runtime with `Runtime::new().block_on(...)` from
   code already running under `main`'s runtime; it panics with "Cannot
@@ -217,6 +239,40 @@ crates/
 - **Real exit codes propagate end to end.** sbt's actual result becomes
   `sbtctl`'s process exit code so agents can branch on success/failure.
 
+## HTTP contract
+
+Served by `sbtd` on the loopback address; the DTOs are `protocol.rs`.
+Written down in the rebuild as the contract the hand-off's `/exec`,
+`/health` and status/shutdown verbs implied.
+
+| Route | Body | Response |
+|---|---|---|
+| `GET /health` | – | `{ status: "ok", pid, version, uptime_secs }` |
+| `GET /status` | – | `{ instances: [{ build_root, pid?, phase: booting\|idle\|running, idle_secs?, uptime_secs }] }` |
+| `POST /exec` | `{ cwd, command_line, verbose? }` | `application/x-ndjson`, one event per line |
+| `POST /shutdown` | `{ target: "one", cwd }` or `{ target: "all" }` | `{ stopped: [build_root] }` |
+
+Errors are JSON `{ code, message, output? }`: `no_build_root` and
+`bad_request` are 400, `project_load_failed` and `start_failed` are 500;
+`output` carries the captured boot lines when the project failed to load.
+
+`/exec` events are tagged by `type`, keep free text in `text`, and end
+with exactly one terminal event, always last:
+
+- `started { build_root, pid, cold_start }`, always first.
+- `log { level: debug|info|warning|error, text }`, sbt's own logger;
+  `debug` only when `verbose`.
+- `output { stream: stdout|stderr|sbt_stdout|sbt_stderr, text }`;
+  `stdout`/`stderr` are the JVM's raw pipes, `sbt_*` sbt's forwarded
+  streams.
+- `diagnostics { file, items: [{ line, column, severity, text }] }`,
+  1-based; an empty `items` means the file is clean now.
+- `done { outcome: success|failure, exit_code, elapsed_ms, summary }`.
+- `aborted { reason: sbt_died|connection_lost|daemon_shutdown, summary }`.
+
+RPC-derived events precede `done` in order; raw pipe lines carry no such
+guarantee.
+
 ## CLI surface
 
 - **Any sbt command line passes through**: `sbtctl compile`, `sbtctl test`,
@@ -243,8 +299,8 @@ crates/
   boot timeout), playing frames frozen from sbt 1.11.7. Two `#[ignore]`
   live tests against `tests/fixtures/hello-sbt` run with
   `SBT_SERVER_LIVE=1`.
-- **No idle-timeout/auto-reap** for warm instances (mentioned as a future
-  possibility, not implemented).
+- **Idle reaping exists** (see Instance lifecycle); its interval is fixed
+  at one minute and only the timeout is configurable.
 - **No auth** on the HTTP API beyond loopback binding.
 - **Windows untested** (`kill <pid>` in `sbtctl daemon stop`).
 
@@ -276,8 +332,8 @@ socket or JSON-RPC to agents; adding auth to the HTTP API; a change to the
 takeover-on-start rule or the bounded-shutdown rule; a change to which
 output channels are captured or to the synthesized completion-line format;
 adopting a different sbt protocol (BSP, LSP) or framing; a change to
-build-root resolution or to the per-instance serialization model; adding
-idle-timeout/auto-reap or a new daemon lifecycle verb; swapping the HTTP
+build-root resolution or to the per-instance serialization model; a change to the
+idle-reaper rule or a new daemon lifecycle verb; swapping the HTTP
 stack or the async runtime; dropping sbt 1.x support or adding sbt 2.x
 support.
 
@@ -289,7 +345,7 @@ that keep the existing endpoints' meaning.
 
 Update when a constraint above is deliberately renegotiated (design
 dialog + PR updating this file), or when an open item is resolved
-(idle reaping, auth, Windows support, sbt 2.x).
+(auth, Windows support, sbt 2.x).
 Never for in-flight status — that's STATE.md. Keep constraints
 falsifiable and dated. `HANDOFF.md` at the project root is the frozen
 2026-10-29 transcript this doc was converted from; do not edit it.

@@ -33,7 +33,9 @@ pub struct StatusResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceStatus {
     pub build_root: PathBuf,
-    pub pid: u32,
+    /// Absent while the instance is still being spawned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
     pub phase: InstancePhase,
     /// Present only while `phase` is `idle`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
