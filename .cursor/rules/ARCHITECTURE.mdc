@@ -243,7 +243,8 @@ crates/
   an empty item list is forwarded too, since it means the file is clean
   now.
 - **Real exit codes propagate end to end.** sbt's actual result becomes
-  `sbtctl`'s process exit code so agents can branch on success/failure.
+  `sbtctl`'s process exit code so agents can branch on success/failure
+  (clamped to 1..=124; 125 is reserved for tool failure, see CLI surface).
 
 ## HTTP contract
 
@@ -283,15 +284,38 @@ guarantee.
 
 - **Any sbt command line passes through**: `sbtctl compile`, `sbtctl test`,
   `sbtctl testOnly com.ex.FooSpec`, or any other raw command via clap's
-  external-subcommand. `-C <dir>` overrides cwd instead of using `$PWD`.
-- **`sbtctl status`** lists warm instances: build root, pid, busy, idle
-  time. **`sbtctl shutdown` / `sbtctl shutdown --all`** stop one or all
-  warm instances (bounded timeout, see Instance lifecycle).
+  external-subcommand, joined with spaces into one command line. sbtctl's
+  own flags must precede it: `-C <dir>` overrides cwd instead of using
+  `$PWD`; `--daemon-url` (`SBTCTL_DAEMON_URL`, default
+  `http://127.0.0.1:8077`) picks the daemon; `--state-dir`
+  (`SBTD_STATE_DIR`) its pid and log directory; `--verbose` keeps sbt's
+  debug-level lines.
+- **Rendering mirrors sbt's own shell**: `log` events print as
+  `[info]`/`[warn]`/`[error]` lines on stdout, raw and forwarded output
+  on the stream it came from, the synthesized summary last; a cold start
+  is announced on stderr as `[sbtctl] starting sbt for <root> (cold
+  start)`. `diagnostics` events are not printed: sbt already logs every
+  compiler message, and the structured form is for HTTP consumers.
+- **Exit codes**: sbt's own code passes through, clamped to 1..=124 when
+  nonzero; **125** means the tool failed rather than the build (an
+  unreachable daemon, a refused request, an `aborted` exec, a protocol
+  error), so the two can never collide. `daemon status` exits 1 when sbtd
+  is not running.
+- **`sbtctl status`** lists warm instances: build root, pid, phase
+  (booting, idle, running), idle time, uptime. **`sbtctl shutdown` /
+  `sbtctl shutdown --all`** stop one or all warm instances (bounded
+  timeout, see Instance lifecycle).
 - **`sbtctl daemon start|stop|restart|status`** manage `sbtd` itself; all
   three transition verbs poll the real `/health` endpoint to confirm the
   transition actually happened rather than firing-and-forgetting a signal.
-- **`sbtctl daemon stop` uses `kill <pid>`**, which assumes a standard POSIX
-  environment; untested on Windows.
+  `start` finds `sbtd` next to its own executable, else on `PATH`, spawns
+  it in its own process group with stdio appended to `sbtd.log`, and
+  passes `--bind` derived from the daemon URL. `stop` reads `sbtd.pid`,
+  refuses to act unless `/health` reports that same pid, then sends
+  SIGTERM; stopping a daemon that is not running succeeds.
+- **Signals go through `nix` (`sbtctl daemon stop`) and detachment through
+  `CommandExt::process_group` (`daemon start`)**: a standard POSIX
+  environment is assumed; untested on Windows.
 
 ## Verified scope and open items
 
@@ -308,7 +332,8 @@ guarantee.
 - **Idle reaping exists** (see Instance lifecycle); its interval is fixed
   at one minute and only the timeout is configurable.
 - **No auth** on the HTTP API beyond loopback binding.
-- **Windows untested** (`kill <pid>` in `sbtctl daemon stop`).
+- **Windows untested** (SIGTERM via `nix` in `sbtctl daemon stop`, process
+  groups in `daemon start`, Unix sockets for sbt's local transport).
 
 ## Audit triggers
 

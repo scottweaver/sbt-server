@@ -1,0 +1,331 @@
+//! `sbtctl` as a real process against an in-test daemon that speaks the
+//! contract, plus one lifecycle test against the real `sbtd` binary.
+
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::path::PathBuf;
+use std::process::{Command, Output};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use axum::extract::State;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use sbt_server_core::protocol::{
+    AbortReason, ExecEvent, ExecRequest, HealthResponse, HealthStatus, InstancePhase,
+    InstanceStatus, LogLevel, OutputStream, ShutdownRequest, ShutdownResponse, StatusResponse,
+};
+
+struct FakeState {
+    events: Vec<ExecEvent>,
+    execs: Mutex<Vec<ExecRequest>>,
+    shutdowns: Mutex<Vec<ShutdownRequest>>,
+}
+
+struct FakeDaemon {
+    url: String,
+    state: Arc<FakeState>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl FakeDaemon {
+    async fn start(events: Vec<ExecEvent>) -> Self {
+        let state = Arc::new(FakeState {
+            events,
+            execs: Mutex::new(Vec::new()),
+            shutdowns: Mutex::new(Vec::new()),
+        });
+        let router = Router::new()
+            .route("/health", get(health))
+            .route("/status", get(status))
+            .route("/exec", post(exec))
+            .route("/shutdown", post(shutdown))
+            .with_state(Arc::clone(&state));
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        Self {
+            url: format!("http://{addr}"),
+            state,
+            task,
+        }
+    }
+
+    fn execs(&self) -> Vec<ExecRequest> {
+        self.state
+            .execs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn shutdowns(&self) -> Vec<ShutdownRequest> {
+        self.state
+            .shutdowns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Drop for FakeDaemon {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: HealthStatus::Ok,
+        pid: 4242,
+        version: "fake".into(),
+        uptime_secs: 7,
+    })
+}
+
+async fn status() -> Json<StatusResponse> {
+    Json(StatusResponse {
+        instances: vec![InstanceStatus {
+            build_root: PathBuf::from("/work/proj"),
+            pid: Some(99),
+            phase: InstancePhase::Idle,
+            idle_secs: Some(12),
+            uptime_secs: 340,
+        }],
+    })
+}
+
+async fn exec(State(state): State<Arc<FakeState>>, Json(request): Json<ExecRequest>) -> String {
+    state
+        .execs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(request);
+    state
+        .events
+        .iter()
+        .map(|event| serde_json::to_string(event).unwrap() + "\n")
+        .collect()
+}
+
+async fn shutdown(
+    State(state): State<Arc<FakeState>>,
+    Json(request): Json<ShutdownRequest>,
+) -> Json<ShutdownResponse> {
+    state
+        .shutdowns
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(request);
+    Json(ShutdownResponse {
+        stopped: vec![PathBuf::from("/work/proj")],
+    })
+}
+
+fn sbtctl(url: &str) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_sbtctl"));
+    command
+        .env("SBTCTL_DAEMON_URL", url)
+        .env_remove("SBTD_STATE_DIR");
+    command
+}
+
+fn run(command: &mut Command) -> (Output, String, String) {
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (output, stdout, stderr)
+}
+
+fn scripted_events(exit_code: i32) -> Vec<ExecEvent> {
+    vec![
+        ExecEvent::Started {
+            build_root: PathBuf::from("/work/proj"),
+            pid: 99,
+            cold_start: true,
+        },
+        ExecEvent::Log {
+            level: LogLevel::Info,
+            text: "compiling 1 Scala source".into(),
+        },
+        ExecEvent::Output {
+            stream: OutputStream::SbtStdout,
+            text: "hello from println".into(),
+        },
+        ExecEvent::Output {
+            stream: OutputStream::Stderr,
+            text: "a warning on stderr".into(),
+        },
+        ExecEvent::Diagnostics {
+            file: PathBuf::from("/work/proj/A.scala"),
+            items: Vec::new(),
+        },
+        ExecEvent::done(exit_code, 12, format!("[done] exit {exit_code}")),
+    ]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn passthrough_sends_the_joined_words_and_the_directory() {
+    let daemon = FakeDaemon::start(scripted_events(0)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (output, _, _) = run(sbtctl(&daemon.url).arg("-C").arg(dir.path()).args([
+        "--verbose",
+        "testOnly",
+        "com.ex.FooSpec",
+    ]));
+    assert_eq!(output.status.code(), Some(0));
+    let execs = daemon.execs();
+    assert_eq!(execs.len(), 1);
+    assert_eq!(execs[0].cwd, dir.path());
+    assert_eq!(execs[0].command_line, "testOnly com.ex.FooSpec");
+    assert!(execs[0].verbose);
+
+    let (_, _, _) = run(sbtctl(&daemon.url).current_dir(dir.path()).arg("compile"));
+    let execs = daemon.execs();
+    assert_eq!(
+        execs[1].cwd.canonicalize().unwrap(),
+        dir.path().canonicalize().unwrap()
+    );
+    assert_eq!(execs[1].command_line, "compile");
+    assert!(!execs[1].verbose);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn events_are_rendered_to_the_right_streams_and_sbts_exit_code_is_kept() {
+    let daemon = FakeDaemon::start(scripted_events(3)).await;
+    let (output, stdout, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(
+        stdout,
+        "[info] compiling 1 Scala source\nhello from println\n[done] exit 3\n"
+    );
+    assert!(
+        stderr.contains("[sbtctl] starting sbt for /work/proj (cold start)"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("a warning on stderr"), "{stderr}");
+    assert!(!stdout.contains("A.scala") && !stderr.contains("A.scala"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exit_codes_are_clamped_and_aborts_exit_125() {
+    let daemon = FakeDaemon::start(scripted_events(300)).await;
+    let (output, _, _) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(124));
+
+    let aborted = vec![
+        ExecEvent::Started {
+            build_root: PathBuf::from("/work/proj"),
+            pid: 99,
+            cold_start: false,
+        },
+        ExecEvent::Aborted {
+            reason: AbortReason::SbtDied,
+            summary: "'compile' aborted: the sbt process died".into(),
+        },
+    ];
+    let daemon = FakeDaemon::start(aborted).await;
+    let (output, _, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(stderr.contains("the sbt process died"), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreachable_daemon_exits_125_with_a_hint() {
+    let closed = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr: SocketAddr = closed.local_addr().unwrap();
+    drop(closed);
+    let (output, _, stderr) =
+        run(sbtctl(&format!("http://{addr}")).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(stderr.contains("cannot reach sbtd"), "{stderr}");
+    assert!(stderr.contains("sbtctl daemon start"), "{stderr}");
+
+    let (output, stdout, _) = run(sbtctl(&format!("http://{addr}")).args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout.contains("not running"), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn status_and_shutdown_speak_the_contract() {
+    let daemon = FakeDaemon::start(Vec::new()).await;
+    let (output, stdout, _) = run(sbtctl(&daemon.url).arg("status"));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout.contains("/work/proj"), "{stdout}");
+    assert!(stdout.contains("idle"), "{stdout}");
+    assert!(stdout.contains("99"), "{stdout}");
+
+    let (output, stdout, _) = run(sbtctl(&daemon.url).args(["shutdown", "--all"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout.contains("stopped sbt for /work/proj"), "{stdout}");
+    let (output, _, _) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "shutdown"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        daemon.shutdowns(),
+        vec![
+            ShutdownRequest::All,
+            ShutdownRequest::One {
+                cwd: PathBuf::from("/tmp")
+            }
+        ]
+    );
+
+    let (output, stdout, _) = run(sbtctl(&daemon.url).args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout.contains("pid 4242"), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn daemon_start_status_stop_drive_the_real_sbtd() {
+    let sbtd = PathBuf::from(env!("CARGO_BIN_EXE_sbtctl"))
+        .parent()
+        .unwrap()
+        .join("sbtd");
+    assert!(
+        sbtd.is_file(),
+        "sbtd must be built next to sbtctl (cargo test --workspace does that)"
+    );
+    let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let url = format!("http://{}", free.local_addr().unwrap());
+    drop(free);
+    let state_dir = tempfile::tempdir().unwrap();
+    let ctl = || {
+        let mut command = sbtctl(&url);
+        command.arg("--state-dir").arg(state_dir.path());
+        command
+    };
+
+    let (output, stdout, stderr) = run(ctl().args(["daemon", "start"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stdout.starts_with("sbtd started (pid "), "{stdout}");
+    assert!(state_dir.path().join("sbtd.pid").is_file());
+
+    let (output, _, stderr) = run(ctl().args(["daemon", "start"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(stderr.contains("already running"), "{stderr}");
+
+    let (output, stdout, _) = run(ctl().args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout.starts_with("sbtd running: pid "), "{stdout}");
+
+    let (output, stdout, _) = run(ctl().arg("status"));
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout, "no warm sbt instances\n");
+
+    let (output, stdout, stderr) = run(ctl().args(["daemon", "restart"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stdout.starts_with("sbtd restarted (pid "), "{stdout}");
+
+    let (output, stdout, stderr) = run(ctl().args(["daemon", "stop"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stdout.starts_with("sbtd stopped (pid "), "{stdout}");
+    assert!(!state_dir.path().join("sbtd.pid").exists());
+
+    let (output, stdout, _) = run(ctl().args(["daemon", "stop"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout.contains("not running"), "{stdout}");
+    let (output, _, _) = run(ctl().args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(1));
+}
