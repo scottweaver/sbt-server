@@ -220,7 +220,11 @@ crates/
   that fires during project loading (the `gcloud` credential-refresh
   warning, for instance) happens before the JSON-RPC handshake completes
   and before any `exec()` subscriber exists. It is a one-time-per-JVM-boot
-  event, not a capture bug.
+  event, not a capture bug. Boot output is kept in a bounded ring buffer
+  and returned in `project_load_failed` when sbt dies before publishing
+  its server; the supervisor reports the exit only after both pipes are
+  drained (bounded), so a fast-dying sbt's last lines, the ones that say
+  why, are never lost to the race between the pipes and `wait` (PR #3).
 - **sbt never sends its `[success] Total time: ...` banner to a client**
   (gotcha 6, confirmed in `Aggregation.scala`: `handedOffToClient` is true
   for JSON-RPC clients and `printSuccess` is skipped). `Instance::exec`

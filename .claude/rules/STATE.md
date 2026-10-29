@@ -44,12 +44,14 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | all five phases merged and pushed; attach fix merged |
+| `main` | trunk | at `289384b`: five phases plus PR #3; nothing in flight |
 
 ## Next up
 
-1. **Push the attach fix** when the user says so, and decide a license
-   before publicising the repo (none is declared).
+1. **Decide a license** before publicising the repo (none is declared).
+   Every change from here on goes issue, branch, push, PR with
+   `Closes #N`, merge, then this post-merge routine; `main` is no longer
+   merged into locally.
 2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
    loopback; Windows (signals, process groups, named pipes); sbt 2.x
    (only 1.x's protocol has been exercised). Each is a design dialog plus
@@ -60,8 +62,8 @@ are green.
 
 ## Most recent meaningful progress
 
-- **2026-10-29 — Fix: test-framework output was lost** (issue #1, branch
-  `fix/attach-terminal-output`). Found by the user on a real munit
+- **2026-10-29 — Fix: test-framework output was lost** (issues #1 and #2,
+  PR #3, merged at `289384b`, CI green on ubuntu and macos). Found by the user on a real munit
   project right after the first install: `sbtctl test` printed only the
   `[info] Passed:` summary. Cause: a channel's terminal is sbt's
   `NullTerminal` until the client sends `sbt/attach`, and the test
