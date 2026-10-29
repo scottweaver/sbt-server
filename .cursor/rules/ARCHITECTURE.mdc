@@ -54,6 +54,8 @@ Cargo.toml                      workspace (3 shipped members + a test double)
 crates/
   core/   sbt-server-core (lib, no binary)
     src/instance.rs    owns one warm sbt process + its JSON-RPC connection
+    src/instance/      descriptor.rs, lines.rs, events.rs, completion.rs (pure);
+                       session.rs (sbt typestate), output.rs (the router task)
     src/jsonrpc.rs     transport-generic JSON-RPC 2.0 client (TCP or Unix socket)
     src/jsonrpc/       framing.rs (LSP framing codec) and message.rs (message
                        shapes): pure, unit-tested without IO
@@ -83,18 +85,23 @@ crates/
 - **The sbt driver is a hand-rolled client for sbt's own JSON-RPC server
   protocol — this is not real LSP or BSP.** It reuses LSP's framing
   (`Content-Length`-prefixed JSON-RPC) and borrows LSP's `initialize`
-  handshake shape, but the actual commands (`sbt/exec`, `sbt/shutdown`,
-  `sbt/systemOut`) are sbt's own proprietary protocol — the same one sbt's
+  handshake shape, but the actual commands (`sbt/exec`, `sbt/systemOut`,
+  and `sbt/exec` of sbt's own `shutdown` command to stop a server) are
+  sbt's own proprietary protocol — the same one sbt's
   thin client (`sbtn`) uses. BSP (Build Server Protocol) is a separate real
   standard sbt also implements (for Metals/IntelliJ); this project does not
   use it at all.
 - **The JSON-RPC client is transport-generic** (gotcha 1): a boxed
-  `dyn AsyncRead + AsyncWrite` trait object with `connect_tcp` and
-  `connect_unix` constructors. `instance.rs::parse_server_uri` handles
-  both `tcp://host:port` and `local:///path` URIs from `active.json`.
-  sbt's source (`CommandExchange.scala`) codes `ConnectionType.Tcp` as the
-  default, but on the original development machine sbt actually picked a
-  Unix domain socket.
+  `dyn AsyncRead + AsyncWrite` object (`jsonrpc::BoxedIo`) opened by
+  `connect_tcp` or `connect_unix`. One actor task per connection owns the
+  socket and the pending-request map, so a reply slot is registered before
+  its request is written and every notification is forwarded before any
+  later response resolves. `instance/descriptor.rs` parses both
+  `tcp://host:port` and `local:///path` URIs from `active.json`. Request
+  ids are sent as JSON strings because sbt stores and echoes them as
+  strings. sbt's source (`CommandExchange.scala`) codes `ConnectionType.Tcp`
+  as the default, but on the original development machine sbt actually
+  picked a Unix domain socket, and so does this one (sbt 1.11.7).
 - **Token auth is optional, not mandatory** (gotcha 2). Over the default
   Local transport sbt treats the connecting process as already
   authenticated via Unix-socket filesystem permissions and omits
@@ -104,29 +111,58 @@ crates/
 
 ## Instance lifecycle
 
+- **sbt is spawned the way its own thin client spawns a server, minus
+  `--detach-stdio`:** `sbt --server -Dsbt.supershell=false
+  -Dsbt.color=false -Dsbt.log.noformat=true` with
+  `SBT_TERMINAL_PROPS=80,24,false,false,false` in the environment, stdin
+  `/dev/null`, stdout and stderr piped. The variable makes sbt treat
+  itself as started by a remote client, so it adds no console channel.
+  Without it the console shell redraws its prompt after every log line
+  and floods the raw stdout pipe with thousands of `ESC[?2004h>....`
+  sequences (observed live, with stdin open or closed, with `-Dsbt.ci=true`
+  and with JLine's dumb-terminal property alike); `--detach-stdio` cures
+  that only by closing the JVM's stdio, which loses the raw output gotcha 5
+  exists to capture. Confirmed live on sbt 1.11.7: boot about 2.3 s, no
+  escape sequences, subprocess output captured from both pipes.
 - **Never trust a pre-existing `active.json`** (gotcha 3). That file can
   describe *any* live server for the build root — a manual `sbt` shell, an
   editor's background instance, a stale crashed server — and trusting it
   silently hands every request to a foreign process with no stdio access
   and no lifecycle control. `Instance::start` therefore *always* takes
   over: if `active.json` exists, connect to whatever is there, send a
-  best-effort bounded `sbt/shutdown`, delete the descriptor regardless of
+  best-effort bounded `shutdown` exec, delete the descriptor regardless of
   whether that worked, then always spawn a fresh `sbt` process. One-time
   cold-boot cost per daemon restart per build root — correctness over
-  speed.
-- **`sbt/shutdown` is bounded** (gotcha 4). sbt's server dispatches through
-  a handler chain with no catch-all; an unrecognized request is silently
-  dropped with no response and no error. The shutdown request is wrapped
-  in `tokio::time::timeout` (5s), then the child is reaped/killed
-  regardless of whether the RPC succeeded, timed out, or errored.
+  speed. After the bounded shutdown and the delete, `start` waits (bounded
+  by the takeover timeout) until the old endpoint refuses connections
+  before spawning: sbt's exit hook deletes `active.json` on the way out
+  and would otherwise remove the replacement's descriptor. A server that
+  never stops listening is logged and spawned over anyway.
+- **Shutdown is `sbt/exec` of sbt's `shutdown` command, bounded**
+  (gotcha 4). There is no `sbt/shutdown` method: sbt's handler chain ends
+  in a fallback that logs an unrecognized request at debug level and never
+  answers it, which is exactly why the hand-off's `sbt/shutdown` hung
+  forever (confirmed in sbt 1.13.x `ServerHandler.fallback`; sbtn sends the
+  `shutdown` command the same way). The `shutdown` exec is wrapped in
+  `tokio::time::timeout` (5s). sbt answers it with a `shutdown`
+  notification and closes the socket without a response (captured live),
+  so a closed connection counts as cooperation; in every case the process
+  is then killed and reaped if it has not exited on its own, regardless of
+  whether the RPC succeeded, timed out, or errored. An exec whose
+  connection drops ends with an `aborted` event: reason `daemon_shutdown`
+  when a shutdown was requested, `sbt_died` when the child is known dead,
+  otherwise `connection_lost` — never a fake exit code.
 - **Routing: cwd → build root by walking upward for `build.sbt` or
   `project/build.properties`.** Instances lazy-start on first use and
   stay warm until an explicit shutdown or daemon restart; there is no
   idle-timeout/auto-reap.
 - **Per-instance serialization.** sbt has one global build state per
   process, so concurrent `exec` calls against the *same* instance are
-  serialized via a `Mutex<()>` guard; different build roots run fully
-  concurrently.
+  serialized via an owned `tokio::sync::Mutex<()>` guard held by the task
+  that runs the exec; different build roots run fully concurrently. That
+  task runs to sbt's terminal reply even when the caller's output receiver
+  is dropped, so a disconnecting HTTP client can never leave sbt busy with
+  the lock free.
 - **The daemon-action path is `async fn` end to end** (gotcha 7). Never
   spin up a second Tokio runtime with `Runtime::new().block_on(...)` from
   code already running under `main`'s runtime; it panics with "Cannot
@@ -141,9 +177,15 @@ crates/
   `sbt/systemOut/Err`) only cover sbt's *own* structured logger; a
   subprocess invoked by a build plugin (like `gcloud`) writes straight to
   the JVM's stdout/stderr and never becomes a notification. `spawn_sbt`
-  pipes the child's real stdout/stderr into a `broadcast` channel
-  (`raw_output`), and `Instance::exec` subscribes to it alongside the
-  notification stream.
+  pipes the child's real stdout/stderr, as bytes, into the instance's
+  single bounded mpsc channel. The same channel carries sbt's JSON-RPC
+  notifications and exec control, so every RPC-derived event of an exec
+  precedes its terminal event (FIFO); raw pipe lines carry no ordering
+  guarantee relative to it. No `broadcast` channel is used anywhere: lag
+  would mean silent output loss, so backpressure is applied instead.
+  `sbt/systemOut` and `sbt/systemErr` arrive as arrays of signed bytes in
+  arbitrary chunks and are reassembled into whole lines
+  (`instance/lines.rs`), as are the raw pipes.
 - **Project-loading output cannot be attributed to a command.** Anything
   that fires during project loading (the `gcloud` credential-refresh
   warning, for instance) happens before the JSON-RPC handshake completes
@@ -156,10 +198,28 @@ crates/
   `[success] 'compile' completed in 1.2s` or
   `[error] 'compile' failed (exit code 1) in 0.8s` — appended after any
   real completion message sbt's RPC response did include.
-- **Bare status pings are dropped** (gotcha 8). `notification_to_exec_event`
-  only forwards `sbt/exec` notifications carrying a non-empty `message`;
-  `ExecStatusEvent` pings with no message are discarded so a no-op
-  `compile` no longer prints two content-free "Processing sbt/exec" lines.
+- **Debug-level log notifications are dropped by default** (gotcha 8). The
+  content-free "Processing sbt/exec" lines are `build/logMessage`
+  notifications at LSP level 4 (log/debug), which sbt's own thin client
+  drops too; `/exec` forwards them only when the request sets `verbose`.
+  `build/taskStart|taskProgress|taskFinish` and `sbt/exec` status
+  notifications are ignored; completion is the response to the `sbt/exec`
+  request.
+- **Completion is the response to the `sbt/exec` request.** Success is a
+  result (`status: Done`, `exitCode` 0 or absent). A failure arrives as a
+  JSON-RPC *error* response: its `code` is the exit code when it is in
+  1..=255, and sbt's generic `UnknownError` (-33000, sent for any failed
+  command, message empty, captured live) means exit code 1; any other code
+  is an internal sbt failure, also reported as exit code 1. The text of a
+  command-parse error ("Not a valid command") reaches only sbt's own
+  console, never a network client.
+- **Compiler diagnostics are a captured channel.** sbt 1.x sends them as
+  `build/publishDiagnostics` (BSP-shaped: `textDocument.uri`,
+  `diagnostics`, `reset`; captured live), and the LSP
+  `textDocument/publishDiagnostics` form is accepted too. They become
+  `diagnostics` events with an absolute file path and 1-based line/column;
+  an empty item list is forwarded too, since it means the file is clean
+  now.
 - **Real exit codes propagate end to end.** sbt's actual result becomes
   `sbtctl`'s process exit code so agents can branch on success/failure.
 
@@ -182,10 +242,13 @@ crates/
 - **Only sbt 1.x server-protocol behaviour has been exercised** (project
   pinned at 1.11.7). The system's `sbt` launcher is 2.0.9, but the launcher
   downloads/runs whatever `project/build.properties` pins per project.
-- **No automated test coverage for `instance.rs`'s sbt-facing logic**
-  (handshake, exec, shutdown); only `routing.rs`'s pure cwd-resolution
-  logic has unit tests. Everything else was verified by live manual
-  testing against real sbt projects, not captured as repeatable tests.
+- **`instance.rs`'s sbt-facing logic is covered by integration tests**
+  against the `fake-sbt` child process (handshake over local and
+  TCP+token, takeover of cooperative, mute and slow-exit servers, exec
+  event streams, child death mid-exec, bounded shutdown, boot failure and
+  boot timeout), playing frames frozen from sbt 1.11.7. Two `#[ignore]`
+  live tests against `tests/fixtures/hello-sbt` run with
+  `SBT_SERVER_LIVE=1`.
 - **No idle-timeout/auto-reap** for warm instances (mentioned as a future
   possibility, not implemented).
 - **No auth** on the HTTP API beyond loopback binding.
@@ -195,8 +258,9 @@ crates/
 
 Files whose changes warrant re-checking this doc during wrap-up:
 
-- `crates/core/src/instance.rs` (takeover-on-start, bounded shutdown,
-  output fan-in, synthesized completion line, `parse_server_uri`)
+- `crates/core/src/instance.rs`, `crates/core/src/instance/**`
+  (takeover-on-start, bounded shutdown, output fan-in and ordering,
+  synthesized completion line, descriptor parsing, event translation)
 - `crates/core/src/jsonrpc.rs`, `crates/core/src/jsonrpc/**` (transport
   abstraction, framing, `initialize` handshake, token handling)
 - `crates/core/src/registry.rs` (instance map, lazy-start, per-instance
@@ -231,7 +295,7 @@ that keep the existing endpoints' meaning.
 
 Update when a constraint above is deliberately renegotiated (design
 dialog + PR updating this file), or when an open item is resolved
-(instance-level tests, idle reaping, auth, Windows support, sbt 2.x).
+(idle reaping, auth, Windows support, sbt 2.x).
 Never for in-flight status — that's STATE.md. Keep constraints
 falsifiable and dated. `HANDOFF.md` at the project root is the frozen
 2026-10-29 transcript this doc was converted from; do not edit it.

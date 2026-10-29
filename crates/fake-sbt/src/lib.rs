@@ -31,6 +31,9 @@ pub const TRANSPORT_ENV: &str = "FAKE_SBT_TRANSPORT";
 pub const TOKEN_ENV: &str = "FAKE_SBT_TOKEN";
 pub const BOOT_DELAY_MS_ENV: &str = "FAKE_SBT_BOOT_DELAY_MS";
 pub const BOOT_FAIL_ENV: &str = "FAKE_SBT_BOOT_FAIL";
+/// When set, the process prints `fake-sbt: exec <command>` to its own stdout
+/// before answering each exec, so raw-pipe capture can be tested.
+pub const PRINT_ON_EXEC_ENV: &str = "FAKE_SBT_PRINT_ON_EXEC";
 
 /// What the fake plays for each `sbt/exec` other than `shutdown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +47,8 @@ pub enum ExecScript {
 /// How the fake reacts to an `sbt/exec` of `shutdown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShutdownBehaviour {
-    /// Answer, delete `active.json`, stop listening, close the connection.
+    /// Like sbt: announce `shutdown`, delete `active.json`, stop listening
+    /// and close the connection without answering the request.
     Cooperative,
     Mute,
     /// Answer and close, but keep listening and keep `active.json` until the
@@ -161,6 +165,8 @@ pub struct Options {
     pub transport: Transport,
     pub token: Option<String>,
     pub scenario: Scenario,
+    /// Print a line to the process stdout before answering each exec.
+    pub print_on_exec: bool,
 }
 
 impl Default for Options {
@@ -169,6 +175,7 @@ impl Default for Options {
             transport: Transport::Tcp,
             token: None,
             scenario: Scenario::default(),
+            print_on_exec: false,
         }
     }
 }
@@ -201,6 +208,7 @@ impl Options {
             transport,
             token: std::env::var(TOKEN_ENV).ok(),
             scenario,
+            print_on_exec: std::env::var_os(PRINT_ON_EXEC_ENV).is_some(),
         })
     }
 }
@@ -237,6 +245,7 @@ pub struct Recorded {
 struct Shared {
     token: Option<String>,
     scenario: Scenario,
+    print_on_exec: bool,
     recorded: Mutex<Vec<Recorded>>,
     active_json: PathBuf,
     token_file: Option<PathBuf>,
@@ -327,6 +336,7 @@ impl FakeSbtServer {
         let shared = Arc::new(Shared {
             token: options.token,
             scenario: options.scenario,
+            print_on_exec: options.print_on_exec,
             recorded: Mutex::new(Vec::new()),
             active_json,
             token_file,
@@ -536,7 +546,7 @@ where
                         return Ok(());
                     }
                 } else {
-                    handle_exec(&mut io, &shared, &id).await?;
+                    handle_exec(&mut io, &shared, command, &id).await?;
                 }
             }
             _ => {}
@@ -567,8 +577,12 @@ async fn handle_initialize<S: AsyncWrite + Unpin>(
 async fn handle_exec<S: AsyncWrite + Unpin>(
     io: &mut S,
     shared: &Shared,
+    command: &str,
     id: &Value,
 ) -> io::Result<()> {
+    if shared.print_on_exec {
+        println!("fake-sbt: exec {command}");
+    }
     tokio::time::sleep(shared.scenario.exec_delay).await;
     match shared.scenario.exec {
         ExecScript::Happy => play(io, HAPPY, id).await,
@@ -606,7 +620,11 @@ async fn handle_shutdown<S: AsyncWrite + Unpin>(
 
 async fn play<S: AsyncWrite + Unpin>(io: &mut S, fixture: &str, id: &Value) -> io::Result<()> {
     let id = id_text(id);
-    for line in fixture.lines().map(str::trim).filter(|l| !l.is_empty()) {
+    for line in fixture
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
         write_frame(io, &line.replace("{{ID}}", &id)).await?;
     }
     Ok(())

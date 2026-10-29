@@ -74,11 +74,15 @@ async fn initialize_then_exec_delivers_every_notification_before_the_response() 
         methods,
         [
             "build/logMessage",
+            "build/taskStart",
             "build/logMessage",
+            "build/taskProgress",
             "sbt/systemOut",
             "sbt/systemOut",
             "sbt/systemOutFlush",
-            "textDocument/publishDiagnostics",
+            "build/logMessage",
+            "build/publishDiagnostics",
+            "build/taskFinish",
             "build/logMessage",
         ]
     );
@@ -184,10 +188,10 @@ async fn failing_exec_surfaces_sbts_exit_code_as_the_error_code() {
         panic!("expected an RPC error, got {error}")
     };
     assert_eq!(rpc.code, 1);
-    assert_eq!(rpc.message, "");
+    assert!(rpc.message.contains("Compilation failed"), "{rpc}");
 
     let diagnostics = std::iter::from_fn(|| notifications.try_recv().ok())
-        .find(|n| n.method == "textDocument/publishDiagnostics")
+        .find(|n| n.method == "build/publishDiagnostics")
         .unwrap();
     assert_eq!(diagnostics.params["diagnostics"][0]["severity"], json!(1));
 }
@@ -235,11 +239,11 @@ async fn shutdown_is_an_exec_that_removes_the_descriptor() {
         .unwrap();
     assert!(server.active_json().is_file());
 
-    let result = connection
+    let error = connection
         .request("sbt/exec", exec_params("shutdown"))
         .await
-        .unwrap();
-    assert_eq!(result["status"], json!("Done"));
+        .unwrap_err();
+    assert!(matches!(error, RequestError::ConnectionClosed), "{error}");
     tokio::time::timeout(Duration::from_secs(5), server.finished())
         .await
         .unwrap();
