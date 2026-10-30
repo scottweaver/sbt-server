@@ -1,7 +1,9 @@
 //! `sbtd` as a real process, driven over HTTP, with the fake sbt binary as
 //! its sbt.
 
+use std::fs::Permissions;
 use std::net::SocketAddr;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -23,6 +25,7 @@ struct Daemon {
 impl Daemon {
     async fn start(env: &[(&str, &str)]) -> Self {
         let state_dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(state_dir.path(), Permissions::from_mode(0o755)).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_sbtd"));
         command
             .args(["--bind", "127.0.0.1:0", "--idle-timeout-secs", "0"])
@@ -160,6 +163,20 @@ async fn health_reports_the_daemon_pid_and_version() {
     assert_eq!(health.version, env!("CARGO_PKG_VERSION"));
     let pid_file = std::fs::read_to_string(daemon.state_dir.path().join("sbtd.pid")).unwrap();
     assert_eq!(pid_file.trim(), daemon.child.id().to_string());
+}
+
+fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[tokio::test]
+async fn the_state_dir_and_its_files_are_private_to_the_owner() {
+    let daemon = Daemon::start(&[]).await;
+    let dir = daemon.state_dir.path();
+    assert_eq!(mode(dir), 0o700, "an open state dir is restricted");
+    for file in ["sbtd.pid", "sbtd.addr"] {
+        assert_eq!(mode(&dir.join(file)), 0o600, "{file}");
+    }
 }
 
 #[tokio::test]

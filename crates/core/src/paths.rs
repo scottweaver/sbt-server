@@ -1,10 +1,18 @@
 //! The daemon's state directory: `$XDG_CONFIG_HOME/sbt-server`, else
-//! `~/.config/sbt-server`.
+//! `~/.config/sbt-server`. It is private to its owner: the directory is 0700
+//! and every file sbtd and sbtctl write there is 0600, because `sbtd.log`
+//! collects every build's raw output.
 
 use std::ffi::OsString;
+use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
+use std::io;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
+
+const PRIVATE_DIR_MODE: u32 = 0o700;
+const PRIVATE_FILE_MODE: u32 = 0o600;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateDir(PathBuf);
@@ -15,6 +23,65 @@ pub enum PathsError {
         "neither XDG_CONFIG_HOME nor HOME is set; cannot locate the sbt-server state directory"
     )]
     NoHome,
+}
+
+/// The files sbtd and sbtctl keep in the state directory. Each one knows
+/// whether a writer replaces it or appends to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateFile {
+    /// The running daemon's pid.
+    Pid,
+    /// The address the running daemon actually bound, which matters when it
+    /// was started on port 0.
+    Addr,
+    /// Where a detached daemon writes its stdout and stderr.
+    Log,
+}
+
+impl StateFile {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Pid => "sbtd.pid",
+            Self::Addr => "sbtd.addr",
+            Self::Log => "sbtd.log",
+        }
+    }
+
+    fn open_options(self) -> OpenOptions {
+        let mut options = OpenOptions::new();
+        match self {
+            Self::Pid | Self::Addr => options.write(true).truncate(true),
+            Self::Log => options.append(true),
+        };
+        options.create(true).mode(PRIVATE_FILE_MODE);
+        options
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum StateDirError {
+    #[error("cannot create {}: {source}", path.display())]
+    Create {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} exists but is not a directory", path.display())]
+    NotADirectory { path: PathBuf },
+    #[error("cannot restrict {} to mode {mode:o}: {source}", path.display())]
+    Restrict {
+        path: PathBuf,
+        mode: u32,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot open {}: {source}", path.display())]
+    Open {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl StateDir {
@@ -59,29 +126,110 @@ impl StateDir {
         &self.0
     }
 
-    /// Holds the running daemon's pid.
+    #[must_use]
+    pub fn file(&self, file: StateFile) -> PathBuf {
+        self.0.join(file.name())
+    }
+
     #[must_use]
     pub fn pid_file(&self) -> PathBuf {
-        self.0.join("sbtd.pid")
+        self.file(StateFile::Pid)
     }
 
-    /// Holds the address the running daemon actually bound, which matters
-    /// when it was started on port 0.
     #[must_use]
     pub fn addr_file(&self) -> PathBuf {
-        self.0.join("sbtd.addr")
+        self.file(StateFile::Addr)
     }
 
-    /// Where a detached daemon writes its stdout and stderr.
     #[must_use]
     pub fn log_file(&self) -> PathBuf {
-        self.0.join("sbtd.log")
+        self.file(StateFile::Log)
     }
+
+    /// Creates the directory with mode 0700, or restricts an existing one
+    /// to 0700. Missing parents are created with the default mode; only the
+    /// state directory itself is private.
+    ///
+    /// # Errors
+    ///
+    /// `Create` when it cannot be created, `NotADirectory` when the path is
+    /// taken by something else, `Restrict` when its mode cannot be changed
+    /// (it belongs to another user, for one).
+    pub fn ensure(&self) -> Result<(), StateDirError> {
+        let create = |source| StateDirError::Create {
+            path: self.0.clone(),
+            source,
+        };
+        if let Some(parent) = self.0.parent() {
+            fs::create_dir_all(parent).map_err(create)?;
+        }
+        match DirBuilder::new().mode(PRIVATE_DIR_MODE).create(&self.0) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(create(error)),
+        }
+        let metadata = fs::metadata(&self.0).map_err(create)?;
+        if !metadata.is_dir() {
+            return Err(StateDirError::NotADirectory {
+                path: self.0.clone(),
+            });
+        }
+        restrict(&self.0, metadata.permissions().mode(), PRIVATE_DIR_MODE)
+    }
+
+    /// Opens `file` for writing (truncating the pid and addr files,
+    /// appending to the log), creating it with mode 0600 and restricting an
+    /// existing one, such as a log left by an earlier version, to 0600.
+    /// Call [`StateDir::ensure`] first.
+    ///
+    /// # Errors
+    ///
+    /// `Open` when it cannot be opened, `Restrict` when its mode cannot be
+    /// changed.
+    pub fn open(&self, file: StateFile) -> Result<File, StateDirError> {
+        let path = self.file(file);
+        let handle = file
+            .open_options()
+            .open(&path)
+            .map_err(|source| StateDirError::Open {
+                path: path.clone(),
+                source,
+            })?;
+        let current_mode = handle
+            .metadata()
+            .map_err(|source| StateDirError::Open {
+                path: path.clone(),
+                source,
+            })?
+            .permissions()
+            .mode();
+        restrict(&path, current_mode, PRIVATE_FILE_MODE)?;
+        Ok(handle)
+    }
+}
+
+fn restrict(path: &Path, current_mode: u32, mode: u32) -> Result<(), StateDirError> {
+    if current_mode & 0o777 == mode {
+        return Ok(());
+    }
+    fs::set_permissions(path, Permissions::from_mode(mode)).map_err(|source| {
+        StateDirError::Restrict {
+            path: path.to_path_buf(),
+            mode,
+            source,
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
+
+    fn mode(path: &Path) -> u32 {
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
 
     #[test]
     fn xdg_config_home_wins() {
@@ -106,5 +254,56 @@ mod tests {
     #[test]
     fn nothing_set_is_an_error() {
         assert_eq!(StateDir::resolve(None, None), Err(PathsError::NoHome));
+    }
+
+    #[test]
+    fn ensure_creates_a_private_directory_and_its_parents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = StateDir::at(tmp.path().join("config/sbt-server"));
+        dir.ensure().unwrap();
+        assert_eq!(mode(dir.path()), 0o700);
+    }
+
+    #[test]
+    fn ensure_restricts_an_existing_open_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("sbt-server");
+        fs::create_dir(&path).unwrap();
+        fs::set_permissions(&path, Permissions::from_mode(0o755)).unwrap();
+        StateDir::at(path.clone()).ensure().unwrap();
+        assert_eq!(mode(&path), 0o700);
+    }
+
+    #[test]
+    fn ensure_refuses_a_file_in_the_way() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("sbt-server");
+        fs::write(&path, "").unwrap();
+        assert!(matches!(
+            StateDir::at(path).ensure(),
+            Err(StateDirError::NotADirectory { .. })
+        ));
+    }
+
+    #[test]
+    fn open_creates_private_files_and_restricts_existing_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = StateDir::at(tmp.path().join("sbt-server"));
+        dir.ensure().unwrap();
+        fs::write(dir.log_file(), "old\n").unwrap();
+        fs::set_permissions(dir.log_file(), Permissions::from_mode(0o644)).unwrap();
+
+        dir.open(StateFile::Log)
+            .unwrap()
+            .write_all(b"new\n")
+            .unwrap();
+        writeln!(dir.open(StateFile::Pid).unwrap(), "123456").unwrap();
+        write!(dir.open(StateFile::Pid).unwrap(), "42").unwrap();
+
+        assert_eq!(fs::read_to_string(dir.log_file()).unwrap(), "old\nnew\n");
+        assert_eq!(fs::read_to_string(dir.pid_file()).unwrap(), "42");
+        for file in [StateFile::Log, StateFile::Pid] {
+            assert_eq!(mode(&dir.file(file)), 0o600, "{file:?}");
+        }
     }
 }

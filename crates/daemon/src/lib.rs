@@ -5,12 +5,13 @@
 mod config;
 mod server;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use clap::Parser;
-use sbt_server_core::paths::StateDir;
+use sbt_server_core::paths::{StateDir, StateFile};
 use sbt_server_core::registry::Registry;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{Signal, SignalKind, signal};
@@ -44,15 +45,13 @@ async fn serve() -> anyhow::Result<()> {
         .init();
 
     let state_dir = cli.state_dir()?;
-    tokio::fs::create_dir_all(state_dir.path())
-        .await
-        .with_context(|| format!("cannot create {}", state_dir.path().display()))?;
+    state_dir.ensure()?;
     let listener = TcpListener::bind(cli.bind.socket_addr())
         .await
         .with_context(|| format!("cannot listen on {}", cli.bind))?;
     let addr = listener.local_addr()?;
     let sigterm = signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?;
-    write_state_files(&state_dir, addr).await?;
+    write_state_files(&state_dir, addr)?;
 
     let registry = Registry::new(cli.registry_config());
     let reaper = registry.spawn_reaper(REAPER_INTERVAL);
@@ -74,13 +73,16 @@ async fn serve() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn write_state_files(state_dir: &StateDir, addr: std::net::SocketAddr) -> anyhow::Result<()> {
-    tokio::fs::write(state_dir.pid_file(), std::process::id().to_string())
-        .await
-        .with_context(|| format!("cannot write {}", state_dir.pid_file().display()))?;
-    tokio::fs::write(state_dir.addr_file(), addr.to_string())
-        .await
-        .with_context(|| format!("cannot write {}", state_dir.addr_file().display()))?;
+fn write_state_files(state_dir: &StateDir, addr: std::net::SocketAddr) -> anyhow::Result<()> {
+    for (file, contents) in [
+        (StateFile::Pid, std::process::id().to_string()),
+        (StateFile::Addr, addr.to_string()),
+    ] {
+        state_dir
+            .open(file)?
+            .write_all(contents.as_bytes())
+            .with_context(|| format!("cannot write {}", state_dir.file(file).display()))?;
+    }
     Ok(())
 }
 

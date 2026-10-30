@@ -62,7 +62,7 @@ crates/
     src/routing.rs     cwd -> build root resolution (walks up for build.sbt /
                        project/build.properties)
     src/protocol.rs    HTTP request/response DTOs shared by daemon+cli
-    src/paths.rs       shared state dir (~/.config/sbt-server)
+    src/paths.rs       shared state dir (~/.config/sbt-server), 0700 with 0600 files
   daemon/ sbt-server-daemon (lib)  axum 0.8 HTTP server wrapping Registry;
                        src/{lib,config,server}.rs; `run()` is the whole daemon
   cli/    sbt-server-cli (lib)     agent-facing client; clap + reqwest;
@@ -128,6 +128,11 @@ crates/
   `tokenfilePath` from `active.json`. `read_connection_info` and the
   `initialize` handshake treat the token as `Option<String>` and only
   read/send one when `tokenfilePath` is present.
+- **The token never reaches a log line.** `Token`'s `Debug` is redacted,
+  and the trace line for each outbound frame goes through
+  `jsonrpc::message::redact_frame`, which replaces
+  `initializationOptions.token`; inbound frames are traced whole because
+  sbt never echoes the token.
 
 ## Instance lifecycle
 
@@ -200,6 +205,12 @@ crates/
   `aborted: daemon_shutdown` instead of hanging. It writes `sbtd.pid` and
   `sbtd.addr` (the address actually bound) into the state dir on start and
   removes them on exit.
+- **The state dir is private to its owner.** `StateDir::ensure` creates it
+  0700 and restricts an existing looser one (refusing a non-directory in
+  the way); `StateDir::open` creates `sbtd.pid`, `sbtd.addr` and
+  `sbtd.log` 0600 and restricts existing ones, because the log collects
+  every build's raw output. sbtd and `sbtctl daemon start` go through
+  these two functions and nothing else.
 - **The daemon-action path is `async fn` end to end** (gotcha 7). Never
   spin up a second Tokio runtime with `Runtime::new().block_on(...)` from
   code already running under `main`'s runtime; it panics with "Cannot
