@@ -96,11 +96,18 @@ pub enum Liveness {
 }
 
 /// `host:port` for sbtd's `--bind`, taken from the URL sbtctl will use.
+/// `--bind` takes a socket-address literal, so the one name the daemon's
+/// Host check accepts, `localhost`, becomes `127.0.0.1` here.
 #[must_use]
 pub fn bind_from_url(url: &str) -> String {
-    url.trim_start_matches("http://")
-        .trim_end_matches('/')
-        .to_owned()
+    let authority = url.trim_start_matches("http://").trim_end_matches('/');
+    match authority.rsplit_once(':') {
+        Some((host, port)) if host.eq_ignore_ascii_case("localhost") => {
+            format!("127.0.0.1:{port}")
+        }
+        _ if authority.eq_ignore_ascii_case("localhost") => "127.0.0.1:80".to_owned(),
+        _ => authority.to_owned(),
+    }
 }
 
 /// Where `sbtd` is: next to this executable, else on `PATH`.
@@ -270,5 +277,13 @@ mod tests {
     fn bind_is_the_authority_of_the_daemon_url() {
         assert_eq!(bind_from_url("http://127.0.0.1:8077"), "127.0.0.1:8077");
         assert_eq!(bind_from_url("http://127.0.0.1:9000/"), "127.0.0.1:9000");
+        assert_eq!(bind_from_url("http://[::1]:8077"), "[::1]:8077");
+    }
+
+    #[test]
+    fn localhost_becomes_the_v4_loopback_literal_sbtd_can_bind() {
+        assert_eq!(bind_from_url("http://localhost:8077"), "127.0.0.1:8077");
+        assert_eq!(bind_from_url("http://LocalHost:9000/"), "127.0.0.1:9000");
+        assert_eq!(bind_from_url("http://localhost"), "127.0.0.1:80");
     }
 }
