@@ -416,8 +416,10 @@ guarantee.
   personal access token with the `repo` scope) in this repository; without
   it the release still publishes, only the formula push fails.
 - **Versions are unified**: one workspace version, one tag (`v0.1.0`), one
-  release; `fake-sbt` (`publish = false`) and the library crates are never
-  released. Licensed Apache-2.0.
+  release. Every crate is `publish = false` (decided 2026-10-30, issue #23):
+  nothing goes to crates.io, the workspace path dependencies carry no
+  version, and `sbt-server` opts into cargo-dist with `dist = true`;
+  `fake-sbt` and the library crates are never released. Licensed Apache-2.0.
 - **Every release carries provenance** (decided 2026-10-30, issue #25; the
   first release to exercise it is the one after `v0.1.1`). The binaries
   are built with cargo-auditable (`cargo-auditable = true`), so

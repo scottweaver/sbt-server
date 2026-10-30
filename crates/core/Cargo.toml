@@ -1,6 +1,7 @@
 [package]
 name = "sbt-server-core"
 description = "Warm sbt instance supervision and the agent-facing HTTP contract shared by sbtd and sbtctl"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

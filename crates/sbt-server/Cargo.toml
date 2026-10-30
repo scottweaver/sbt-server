@@ -1,6 +1,7 @@
 [package]
 name = "sbt-server"
 description = "Warm sbt per project for agent-driven builds: the sbtd daemon and the sbtctl CLI"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -34,3 +35,8 @@ tokio-stream.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.dist]
+# Never published to crates.io (the path dependencies carry no version);
+# cargo-dist skips publish = false packages unless told otherwise.
+dist = true

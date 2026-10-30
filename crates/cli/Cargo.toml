@@ -1,6 +1,7 @@
 [package]
 name = "sbt-server-cli"
 description = "Agent-facing CLI that runs sbt commands against the warm sbt kept by sbtd"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

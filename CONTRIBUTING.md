@@ -51,10 +51,14 @@ cargo build
 cargo test --workspace
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
+cargo deny check
 ```
 
 These are what CI runs (with `--locked`), so a PR that passes them locally
-passes CI.
+passes CI. The last needs cargo-deny (`brew install cargo-deny` or
+`cargo install --locked cargo-deny`); it checks the dependency tree against
+the RustSec advisories and the license, duplicate and source rules in
+`deny.toml`.
 
 Three more exercise a real sbt or need extra tooling, and are run by hand:
 
