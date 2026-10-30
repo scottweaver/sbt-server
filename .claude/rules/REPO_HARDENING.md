@@ -189,6 +189,19 @@ issue (its body carries the exact commands), and closed by hand.
   signatures through `sbt-ci-release`. Scorecard's Signed-Releases
   check reads the latest releases only, so the score moves on the first
   release after the change.
+- **Signatures are release assets too.** Scorecard's Signed-Releases
+  reads only assets named `*.sigstore.json`, `*.sig`, `*.minisig`,
+  `*.asc`, `*.intoto.jsonl` on the last five releases; it never reads the
+  attestations API. So a second workflow signs each asset keyless with
+  `cosign sign-blob --bundle` and uploads `<asset>.sigstore.json` beside
+  it. It is triggered by `workflow_run` of the release workflow, because
+  a release created with `GITHUB_TOKEN` never fires a `release:` event,
+  and a generator's custom jobs rarely hold both `id-token: write` and
+  `contents: write`. A `workflow_run` job runs from the default branch,
+  so the certificate identity users verify against is
+  `.../sign.yml@refs/heads/main`, not the tag; the verify command in the
+  install docs pins that exact identity and the GitHub OIDC issuer
+  (proven on sbt-server v0.1.2, 2026-10-30).
 - **Code signing and notarization** (macOS) stay a decision, not a
   default: do it when a managed endpoint actually blocks the binary,
   because it needs a developer certificate and a secret in CI.
@@ -204,12 +217,37 @@ issue (its body carries the exact commands), and closed by hand.
   to CodeQL's. `permissions: read-all` at top level, `security-events:
   write` and `id-token: write` on the job.
 - **Checks that are capped by structure, not by work**, so they are
-  read, not chased: Code-Review and Contributors on a one-person
-  project; Maintained for a repository under 90 days old; Packaging
-  (`-1`, unscored) when the release is a GitHub Release rather than a
-  registry publish. Every other check is expected at 10; a repository
-  with those at 10 and the structural ones explained is a top-tier
-  repository by this rubric.
+  read, not chased (each ceiling measured on sbt-server, 2026-10-30,
+  Scorecard v5.6):
+  - Code-Review and Contributors on a one-person project; Maintained
+    for a repository under 90 days old; Packaging (`-1`, unscored) when
+    the release is a GitHub Release rather than a registry publish.
+  - Branch-Protection: tier 1 (no force push, no deletion) is 3; tier 2
+    weighs a reviewer count double and requiring PRs, up-to-date
+    branches and last-push approval once each, and the later tiers do
+    not count until tier 2 is complete. Without a second human the
+    ceiling is 4 (strict up-to-date checks, with the merge-main churn
+    that implies). One required approval plus an admin bypass reads 8,
+    and makes every merge a bypass; do not.
+  - SAST: 7 the day CodeQL lands, then 10 only once all of the last 30
+    merged PRs carry a CodeQL check run on their head commit. It climbs
+    by itself; a PR opened before CodeQL existed never counts.
+  - Pinned-Dependencies: every `curl | sh` a release generator emits
+    (its own installer, rustup, an SBOM tool) counts as unpinned unless
+    the URL is `raw.githubusercontent.com` at a commit SHA; a checksum
+    check does not count. With cargo-dist the ceiling is 7, and dropping
+    the SBOM to gain a point is the wrong trade.
+  - Token-Permissions: a generated release workflow with top-level
+    `contents: write` and no knob to narrow it reads 0.
+  - CII-Best-Practices: 0 until the project is registered at
+    bestpractices.dev; registered is 2, passing 5, silver 7, gold 10.
+    Passing needs a CONTRIBUTING file (how to report, contribute, run
+    the tests, the test policy) and human-written release notes or a
+    CHANGELOG; the rest is form answers, about an hour.
+  Every other check is expected at 10. A repository with those at 10
+  and the structural ones explained is a top-tier repository by this
+  rubric; on a solo repository released by a generator that is an
+  overall score near 7.5, not 10.
 
 ### 10. The code itself
 
@@ -245,8 +283,6 @@ Listed so nobody re-proposes them without a new reason.
 
 - A gitleaks CI job: GitHub secret scanning plus push protection
   already cover it.
-- The OpenSSF Best Practices (CII) badge: a self-certified form, worth
-  an hour when a team asks for it, not before.
 - `cargo-vet` or `cargo-crev` review trails: heavier than a small
   project's dependency tree warrants.
 - Mutation testing (`cargo-mutants`): useful, slow, and a judgement
@@ -261,7 +297,8 @@ A merged PR touching any of these re-checks its row at wrap-up:
 - the release generator's config (`dist-workspace.toml`) and any
   generated workflow
 - `deny.toml`, `fuzz/**`, coverage configuration
-- `SECURITY.md`, `LICENSE`, the README badge block
+- `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`, the README
+  badge block
 - workspace-level lints in the package manifest (`[workspace.lints]`)
 - repository settings (no file; the settings issue is the record)
 

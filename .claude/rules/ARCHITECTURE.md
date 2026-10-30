@@ -436,9 +436,11 @@ guarantee.
   grant `id-token: write` without `contents: write` or the reverse, so the
   signing cannot live inside the release run), downloads the assets, signs
   each keyless with `cosign sign-blob --bundle` and uploads
-  `<asset>.sigstore.json` next to it. Verification pins the certificate
-  identity to this repository's `sign.yml` at a `v*` tag and the GitHub
-  OIDC issuer (`docs/install.md`). Scorecard's Signed-Releases check reads
+  `<asset>.sigstore.json` next to it. A `workflow_run` job runs from the
+  default branch, so the certificate identity is
+  `.../.github/workflows/sign.yml@refs/heads/main`, never the tag;
+  verification pins that identity and the GitHub OIDC issuer
+  (`docs/install.md`, proven on v0.1.2). Scorecard's Signed-Releases check reads
   these; it does not read the attestations API.
 - **No code signing or notarization** (decided 2026-10-30, issue #27): it
   needs a paid Apple Developer Program membership. Sigstore and the
