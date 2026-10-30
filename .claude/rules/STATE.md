@@ -54,8 +54,9 @@ first batch is open; #23 and #34 are next.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `76158a9` (#33 merged); `v0.1.1` is the last release |
-| `ci/coverage` | #36: coverage via cargo-llvm-cov and Codecov (OIDC), badge in README | PR #37, measure job green; upload blocked until the repo is activated on codecov.io |
+| `main` | trunk | at `ab8d62f` (#41 merged); `v0.1.1` is the last release |
+| `docs/security-policy` | #42: SECURITY.md pointing at GitHub private vulnerability reporting | PR #44, CI green, awaiting merge |
+| `test/fuzz-parsers` | #43: cargo-fuzz targets over the five pure parsers, `fuzz/` outside the workspace | PR #45, 60 s seed runs clean locally, awaiting CI and merge |
 
 ## Next up
 
@@ -73,7 +74,19 @@ first batch is open; #23 and #34 are next.
    closed by hand (#35 was the first). #26 (bearer-token auth on sbtd) is
    a design dialog and structural per ARCHITECTURE.md; #27 (macOS signing
    and notarization) stays open until a team reports an endpoint policy
-   block.
+   block. Scorecard scored `main` 4/10 on 2026-10-30 and maps onto the
+   open issues: Security-Policy is #42, Fuzzing is #43, SAST is #34,
+   Branch-Protection is #21, Pinned-Dependencies and Signed-Releases are
+   #25. #21's recipe is a ruleset on `main`: block force pushes and
+   deletion, require a pull request with 1 approval and stale-approval
+   dismissal, require `check (ubuntu-latest)`, `check (macos-latest)` and
+   `coverage` up to date, with Repository admin in the bypass list for
+   pull requests only; that reaches Scorecard tier 3 (8/10) for a solo
+   maintainer. Token-Permissions stays 0 because cargo-dist writes
+   `contents: write` at the top of `release.yml` with no knob to move it;
+   only an upstream change fixes it. Code-Review, Maintained, Contributors
+   and CII-Best-Practices are accepted as is. The CodeQL badge is added by
+   #34's own PR (the line is a comment on #34).
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
@@ -92,6 +105,21 @@ first batch is open; #23 and #34 are next.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
+  #40 via PR #41); #42 and #43 opened with PRs #44 and #45.** Why: a
+  team evaluating the tool reads the badge row first. `coverage.yml` runs
+  cargo-llvm-cov on ubuntu with the spawned `sbtd`/`sbtctl`/`fake-sbt`
+  children instrumented and `fake-sbt` excluded from the number, uploads
+  to Codecov over OIDC (no secret; the user activated the repo by
+  installing the Codecov app), and `main` reads 91%. `scorecard.yml`
+  published the first score, 4/10, which the triage in Next up turned
+  into work. Lessons: a Codecov upload fails with "Repository not found"
+  until the repo is activated; Scorecard's Packaging check does not
+  recognise cargo-dist's Homebrew job (unscored, harmless); two sessions
+  sharing one checkout cost a stray commit on `ci/coverage`, so side
+  sessions now work in their own worktrees. Risk: #44 and the fuzz PR
+  merged on green CI without a second reader; the fuzz targets only run
+  by hand.
 - **2026-10-30 — #19 and #20 landed (PRs #33, #32).** Why: the two
   local-trust gaps from the assessment. #20 makes the state dir 0700 and
   its files 0600 and keeps the sbt token out of trace frames; #19 refuses
@@ -186,51 +214,44 @@ first batch is open; #23 and #34 are next.
   the repo already passes locally binding once a remote exists, and the
   README is what someone installing the tool reads first. Risk: CI has
   never run (no remote); the first push will tell.
-- **2026-10-29 — Phase 4: sbtctl landed** (branch `feat/cli`, merged).
-  Why: the agent-facing surface is the point of the project; it is a thin
-  client over the HTTP contract plus the daemon lifecycle verbs, and the
-  smoke script proves the whole chain on real sbt. Decisions: diagnostics
-  are not rendered by the CLI (sbt logs each compiler message already),
-  sbtctl's flags must precede the sbt command line, and `daemon stop`
-  refuses to signal unless the pid file and `/health` agree. Risk: the
-  cold-start boot time is not inside the `[success]` summary's elapsed
-  figure; the `[sbtctl] starting sbt` line on stderr is the only hint.
 
 ## Blocked / waiting
 
-- *(nothing)*
+- PRs #44 and #45 wait on a merge by hand; both are green and docs or
+  test-only.
 
 ## Session handoff
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** start #23 and #34 as two parallel sessions from
-  `main`. PR #37 (coverage, issue #36) waits on a one-time manual step:
-  sign in to codecov.io with GitHub and activate `scottweaver/sbt-server`,
-  then re-run its workflow; the badge in README stays "unknown" until the
-  first upload succeeds.
+- **Resume here:** merge #44 and #45, run wrap-up for each, then do
+  #21 with the ruleset recipe in Next up, and start #23 and #34 as
+  parallel sessions from `main`. The next Scorecard run on `main` (weekly,
+  or on the merge push) should show Security-Policy and Fuzzing at 10.
+- Private vulnerability reporting was enabled on the repo on 2026-10-30;
+  vulnerability alerts, Dependabot security updates and auto-merge are
+  still off (#21). Until #21 lands, docs carve-out PRs merge by hand with
+  `--squash --delete-branch`.
+- Fuzzing needs a nightly at or above the workspace's `rust-version`
+  1.95: `rustup toolchain install nightly`, then
+  `cargo +nightly fuzz run <target>` from `fuzz/`; the older dated
+  nightlies on this machine fail the version check. cargo-fuzz is
+  installed locally.
+- Signed-Releases caveat for #25: Scorecard looks for `*.intoto.jsonl` or
+  `*.sigstore.json` release assets, while GitHub attestations live in the
+  attestations API, so #25 may lift Pinned-Dependencies without lifting
+  Signed-Releases.
 - `sbtctl daemon start` cannot start a daemon for
   `--daemon-url http://localhost:<port>`: `bind_from_url` hands
   `localhost:<port>` to `--bind`, which only parses IP literals. Found
   while writing #18's CLI test; not filed yet.
-- The issues were drafted in chat and filed on 2026-10-30, all assigned,
-  bodies cross-linked (#22 and #24 cite each other, #26 cites #18).
-  Nothing about them is written down anywhere but the issues themselves.
-- Deliberately not filed: a gitleaks CI job (GitHub secret scanning and
-  push protection are already on for the repo), and the local pre-commit
-  scrub for names that must never appear in the repo; its word list stays
-  outside the repo.
-- Repo settings observed 2026-10-30, recorded in #21: default workflow
-  token read-only; secret scanning and push protection on; vulnerability
-  alerts, Dependabot security updates and auto-merge off; `main`
-  unprotected. Until #21 lands, docs carve-out PRs are merged by hand
-  with `--squash --delete-branch`, not `--auto`. A `dependencies` label
-  now exists for Dependabot's PRs.
-- cargo-dist 0.32 keys verified against its docs for #25:
-  `cargo-auditable`, `cargo-cyclonedx`, `github-attestations`
-  (experimental), `github-action-commits` (a table that survives
-  `dist generate`). There is no macOS signing key, so #27 would be a
-  custom codesign plus notarytool job.
+- Deliberately not filed: a gitleaks CI job (secret scanning and push
+  protection are on), and the local pre-commit scrub for names that must
+  never appear in the repo; its word list stays outside the repo.
+- cargo-dist 0.32 keys verified for #25: `cargo-auditable`,
+  `cargo-cyclonedx`, `github-attestations` (experimental),
+  `github-action-commits` (survives `dist generate`). No macOS signing key
+  exists, so #27 would be a custom codesign plus notarytool job.
 
 ## Maintenance
 
