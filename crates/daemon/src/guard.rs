@@ -3,14 +3,19 @@
 //! 127.0.0.1 (DNS rebinding), fetches `http://attacker.example:8077/exec`
 //! and the browser delivers it here with that name as `Host` and an
 //! `Origin` header. `sbtctl` sends a loopback `Host` and never an `Origin`,
-//! so every request is held to both.
+//! so every request is held to both. Loopback plus those headers still
+//! admit every local user, so every route but `/health` also requires the
+//! bearer token sbtd minted at start; only the state directory's owner can
+//! read it.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
 
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use sbt_server_core::auth::{BearerToken, bearer_credentials};
 use thiserror::Error;
 
 use crate::server::ApiError;
@@ -134,9 +139,70 @@ pub async fn require_loopback_client(request: Request, next: Next) -> Response {
     }
 }
 
+/// Whether the request carries `Authorization: Bearer <token>` with the
+/// daemon's token. Compared in constant time; the header is never logged.
+pub fn authorized(headers: &HeaderMap, token: &BearerToken) -> bool {
+    headers
+        .get(header::AUTHORIZATION)
+        .map(header_text)
+        .and_then(|value| bearer_credentials(&value).map(str::to_owned))
+        .is_some_and(|presented| token.matches(&presented))
+}
+
+/// The layer under every route but `/health`: a request without the
+/// daemon's token is answered 401 in sbtd's own error shape.
+pub async fn require_bearer_token(
+    State(token): State<Arc<BearerToken>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if authorized(request.headers(), &token) {
+        return next.run(request).await;
+    }
+    tracing::warn!(
+        method = %request.method(),
+        path = request.uri().path(),
+        "request without the bearer token refused"
+    );
+    let mut response = ApiError::unauthorized().into_response();
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Bearer realm=\"sbtd\""),
+    );
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn headers_with(authorization: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(value) = authorization {
+            headers.insert(header::AUTHORIZATION, HeaderValue::from_str(value).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn the_daemons_token_is_authorized_and_everything_else_is_not() {
+        let token = BearerToken::generate().unwrap();
+        let other = BearerToken::generate().unwrap();
+        assert!(authorized(
+            &headers_with(Some(&token.authorization_value())),
+            &token
+        ));
+        assert!(!authorized(
+            &headers_with(Some(&other.authorization_value())),
+            &token
+        ));
+        assert!(!authorized(
+            &headers_with(Some(&format!("Basic {}", token.as_str()))),
+            &token
+        ));
+        assert!(!authorized(&headers_with(Some(token.as_str())), &token));
+        assert!(!authorized(&headers_with(None), &token));
+    }
 
     #[test]
     fn loopback_literals_and_localhost_are_accepted_with_or_without_a_port() {

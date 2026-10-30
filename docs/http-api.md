@@ -3,13 +3,22 @@
 `sbtctl` is a thin client; everything it does is one of four requests to
 `sbtd`, and anything that can issue loopback HTTP can do the same. The base
 URL is `http://127.0.0.1:8077` unless the daemon was started elsewhere.
-There is no authentication: the daemon binds loopback only and trusts
-everything on this machine. It does refuse what a browser would send: the
-`Host` header must be `127.0.0.1`, `[::1]` or `localhost` (any loopback IP
-literal works), with an optional port, and a request carrying any `Origin`
-header is refused. Both answer `403 forbidden` (see Errors). That closes
-DNS rebinding, where a web page reaches loopback under its own hostname;
-`curl` and `sbtctl` never send either.
+
+Every route but `GET /health` requires a bearer token. `sbtd` mints a new
+one each time it starts and writes it to `sbtd.token` (mode 0600) in its
+state directory, next to `sbtd.pid`; the directory itself is 0700, so only
+the user who started the daemon can read it. Send it as
+`Authorization: Bearer <token>`; a missing or wrong token answers
+`401 unauthorized` (see Errors). `sbtctl` reads the file from `--state-dir`
+(`SBTD_STATE_DIR`) on its own, so an agent using the CLI never sees the
+token. A `sbtctl daemon restart` rotates it.
+
+The daemon also refuses what a browser would send: the `Host` header must
+be `127.0.0.1`, `[::1]` or `localhost` (any loopback IP literal works), with
+an optional port, and a request carrying any `Origin` header is refused.
+Both answer `403 forbidden`. That closes DNS rebinding, where a web page
+reaches loopback under its own hostname; `curl` and `sbtctl` never send
+either.
 
 | Method and path | Request body | Response |
 |---|---|---|
@@ -97,6 +106,7 @@ Any non-2xx response is JSON:
 |---|---|---|
 | 400 | `no_build_root` | `cwd` is not inside an sbt project. |
 | 400 | `bad_request` | `cwd` does not exist, or `command_line` is empty. |
+| 401 | `unauthorized` | No `Authorization: Bearer` header, or a token other than the one in `sbtd.token`. Every route but `/health`. The response carries `WWW-Authenticate: Bearer realm="sbtd"`. |
 | 403 | `forbidden` | `Host` is missing or not loopback, or the request carries an `Origin` header. Browsers send both; `sbtctl` and `curl` never do. |
 | 500 | `project_load_failed` | sbt exited or stalled before its server came up. `output` carries the last lines sbt printed, which usually say why. |
 | 500 | `start_failed` | sbt came up but the connection or handshake failed, or the server descriptor it was waiting for named a non-loopback address or a token file outside `~/.sbt`. |
@@ -105,6 +115,7 @@ Any non-2xx response is JSON:
 
 ```bash
 curl -sN -X POST localhost:8077/exec \
+  -H "authorization: Bearer $(cat ~/.config/sbt-server/sbtd.token)" \
   -H 'content-type: application/json' \
   -d '{"cwd":"/Users/you/code/my-project","command_line":"compile"}'
 ```

@@ -109,7 +109,10 @@ back as `done` with the exit code, or `aborted` if sbt died, never a fake.
 Instances idle for two hours are shut down. The daemon only ever binds a
 loopback address, by construction, and refuses requests that do not name
 one or that carry an `Origin` header, so a web page cannot reach it even
-through DNS rebinding.
+through DNS rebinding. Every route but `/health` also requires a bearer
+token that `sbtd` mints at each start and keeps in its 0700 state
+directory, so another user on the same machine cannot run sbt as you;
+`sbtctl` reads it on its own.
 
 ## Documentation
 

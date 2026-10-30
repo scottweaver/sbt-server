@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use clap::Parser;
+use sbt_server_core::auth::BearerToken;
 use sbt_server_core::paths::{StateDir, StateFile};
 use sbt_server_core::registry::Registry;
 use tokio::net::TcpListener;
@@ -54,7 +55,8 @@ async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("cannot listen on {}", cli.bind))?;
     let addr = listener.local_addr()?;
     let sigterm = signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?;
-    write_state_files(&state_dir, addr)?;
+    let token = BearerToken::generate().context("cannot mint the bearer token")?;
+    write_state_files(&state_dir, addr, &token)?;
 
     let registry = Registry::new(cli.registry_config()?);
     let reaper = registry.spawn_reaper(REAPER_INTERVAL);
@@ -64,7 +66,7 @@ async fn serve() -> anyhow::Result<()> {
     });
     tracing::info!(%addr, pid = std::process::id(), "sbtd listening");
 
-    axum::serve(listener, server::router(state))
+    axum::serve(listener, server::router(state, token))
         .with_graceful_shutdown(drain_on_signal(sigterm, registry))
         .await?;
 
@@ -76,9 +78,14 @@ async fn serve() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_state_files(state_dir: &StateDir, addr: std::net::SocketAddr) -> anyhow::Result<()> {
+fn write_state_files(
+    state_dir: &StateDir,
+    addr: std::net::SocketAddr,
+    token: &BearerToken,
+) -> anyhow::Result<()> {
     for (file, contents) in [
         (StateFile::Pid, std::process::id().to_string()),
+        (StateFile::Token, token.as_str().to_owned()),
         (StateFile::Addr, addr.to_string()),
     ] {
         state_dir
@@ -90,7 +97,11 @@ fn write_state_files(state_dir: &StateDir, addr: std::net::SocketAddr) -> anyhow
 }
 
 async fn remove_state_files(state_dir: &StateDir) {
-    for path in [state_dir.pid_file(), state_dir.addr_file()] {
+    for path in [
+        state_dir.pid_file(),
+        state_dir.addr_file(),
+        state_dir.token_file(),
+    ] {
         drop(tokio::fs::remove_file(path).await);
     }
 }

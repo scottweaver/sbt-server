@@ -9,10 +9,11 @@ use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::http::{StatusCode, header};
-use axum::middleware::from_fn;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sbt_server_core::auth::BearerToken;
 use sbt_server_core::instance::{CommandLine, StartError};
 use sbt_server_core::protocol::{
     ErrorCode, ErrorResponse, ExecEvent, ExecRequest, HealthResponse, HealthStatus,
@@ -28,12 +29,19 @@ pub struct AppState {
     pub started_at: Instant,
 }
 
-pub fn router(state: Arc<AppState>) -> Router {
+/// `/health` is open; every other route requires the bearer token. The
+/// loopback check is the outer layer, so a foreign `Host` is refused with
+/// 403 before the token is looked at.
+pub fn router(state: Arc<AppState>, token: BearerToken) -> Router {
     Router::new()
-        .route("/health", get(health))
         .route("/status", get(status))
         .route("/exec", post(exec))
         .route("/shutdown", post(shutdown))
+        .route_layer(from_fn_with_state(
+            Arc::new(token),
+            crate::guard::require_bearer_token,
+        ))
+        .route("/health", get(health))
         .layer(from_fn(crate::guard::require_loopback_client))
         .with_state(state)
 }
@@ -141,6 +149,15 @@ impl ApiError {
             StatusCode::BAD_REQUEST,
             ErrorCode::BadRequest,
             format!("request body: {}", rejection.body_text()),
+        )
+    }
+
+    pub(crate) fn unauthorized() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            ErrorCode::Unauthorized,
+            "missing or wrong bearer token; sbtctl reads it from sbtd.token in the state dir"
+                .to_owned(),
         )
     }
 

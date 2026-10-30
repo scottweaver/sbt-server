@@ -36,6 +36,9 @@ pub enum StateFile {
     Addr,
     /// Where a detached daemon writes its stdout and stderr.
     Log,
+    /// The bearer token the running daemon requires on every route but
+    /// `/health`; minted at start, removed at exit, so a restart rotates it.
+    Token,
 }
 
 impl StateFile {
@@ -45,13 +48,14 @@ impl StateFile {
             Self::Pid => "sbtd.pid",
             Self::Addr => "sbtd.addr",
             Self::Log => "sbtd.log",
+            Self::Token => "sbtd.token",
         }
     }
 
     fn open_options(self) -> OpenOptions {
         let mut options = OpenOptions::new();
         match self {
-            Self::Pid | Self::Addr => options.write(true).truncate(true),
+            Self::Pid | Self::Addr | Self::Token => options.write(true).truncate(true),
             Self::Log => options.append(true),
         };
         options.create(true).mode(PRIVATE_FILE_MODE);
@@ -139,6 +143,11 @@ impl StateDir {
     #[must_use]
     pub fn addr_file(&self) -> PathBuf {
         self.file(StateFile::Addr)
+    }
+
+    #[must_use]
+    pub fn token_file(&self) -> PathBuf {
+        self.file(StateFile::Token)
     }
 
     #[must_use]

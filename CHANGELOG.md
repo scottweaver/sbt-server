@@ -7,6 +7,16 @@ until 1.0.0 the HTTP and CLI contracts may still change in a minor release.
 
 ## [Unreleased]
 
+### Security
+
+- Every HTTP route but `GET /health` now requires a bearer token. `sbtd`
+  mints one at each start and writes it to `sbtd.token` (0600) in the state
+  directory; `sbtctl` reads it from `--state-dir` / `SBTD_STATE_DIR` on its
+  own, so agent call sites do not change. Tools that call the API directly
+  must send `Authorization: Bearer <token>`; a missing or wrong token
+  answers `401 unauthorized`. This keeps other local users on a shared
+  machine from running sbt as you (#26).
+
 ## [0.1.2] - 2026-10-30
 
 A hardening release. Nothing about how `sbtctl` is used changes; what

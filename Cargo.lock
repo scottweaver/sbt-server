@@ -810,6 +810,7 @@ name = "sbt-server-core"
 version = "0.1.2"
 dependencies = [
  "fake-sbt",
+ "getrandom",
  "serde",
  "serde_json",
  "tempfile",
