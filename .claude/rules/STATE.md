@@ -5,14 +5,12 @@ first to learn where the project stands right now. It answers "where
 are we" — never "how does this work" (that's ARCHITECTURE.md and the
 code) and never "how should we work" (that's METHODOLOGIES.md).
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## Active workstream
 
 The rebuild of sbt-server from the hand-off is complete: five phases, one
-local branch each, merged `--no-ff` into `main` on 2026-10-29. There is no
-remote and nothing has been pushed; that is the next step and it waits
-for the user. The core
+local branch each, merged `--no-ff` into `main` on 2026-10-29. The core
 crate holds the agent-facing `protocol.rs` DTOs, the JSON-RPC connection
 actor, `routing.rs`, `paths.rs`, `registry.rs` (shared boots, eviction of
 dead instances, idle reaper) and the whole instance layer:
@@ -40,35 +38,62 @@ macos; `README.md` covers install and usage. The remote
 passes end to end against real sbt; fmt, `clippy -D warnings` and `test`
 are green.
 
+The active workstream since 2026-10-30 is security hardening: ten issues
+under the `security` label (#18 to #27), each its own PR from `main`, in
+the order "Next up" gives. No code for them exists yet.
+
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `7c6eee7`, tagged `v0.1.1` and released; nothing in flight |
+| `main` | trunk | at `0b5f758`, tagged `v0.1.1` and released; nothing in flight |
 
 ## Next up
 
-1. **Releasing** is always: bump the workspace version in a PR, merge,
+1. **Security hardening, one PR per issue, never stacked.** #18 first
+   (refuse a non-loopback Host or any Origin: the one hole reachable from
+   a browser via DNS rebinding), then #19 (validate `active.json`:
+   loopback TCP only, token file under `~/.sbt`) and #20 (state dir 0700,
+   files 0600, sbt token redacted from trace frames). Then #22 (ci.yml:
+   `permissions: contents: read`, SHA-pinned actions, `--locked`) before
+   #21 (ruleset on `main`, vulnerability alerts, auto-merge; settings
+   only, closed by hand) so the required checks already have names; then
+   #24 (Dependabot) and #23 (cargo-deny). #25 (cargo-auditable, CycloneDX
+   SBOM, GitHub attestations, pinned release actions) rides the next
+   release, since its "done when" needs a `v*` tag. #26 (bearer-token
+   auth on sbtd) is a design dialog and structural per ARCHITECTURE.md;
+   #27 (macOS signing and notarization) stays open until a team reports
+   an endpoint policy block.
+2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
    fine-grained PAT scoped to the tap with Contents read/write; when it
    expires only the formula push fails.
-2. **Socialising it**: `docs/agents.md` is the page to hand to a team. If
-   an endpoint policy rejects unsigned binaries, code signing and
-   notarization become the next ticket; nothing in the pipeline does them.
-3. **Still open from the hand-off**: auth on sbtd beyond loopback, Linux as
-   a supported platform, sbt 2.x, a launchd recipe for running sbtd at
-   login.
-2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
-   loopback; Windows (signals, process groups, named pipes); sbt 2.x
-   (only 1.x's protocol has been exercised). Each is a design dialog plus
-   an ARCHITECTURE.md change, not a quick fix.
-3. **Daily use will surface the rest**: the cold-start boot time is not in
+3. **Socialising it**: `docs/agents.md` is the page to hand to a team.
+   What a security review will ask for is what #23, #25 and #27 produce
+   (license report, SBOM, provenance, a signature).
+4. **Still open from the hand-off**: auth on sbtd beyond loopback (now
+   #26), Linux as a supported platform, sbt 2.x (only 1.x's protocol has
+   been exercised), a launchd recipe for running sbtd at login. Each is a
+   design dialog plus an ARCHITECTURE.md change, not a quick fix.
+5. **Daily use will surface the rest**: the cold-start boot time is not in
    the `[success]` summary; `sbtctl` does not render diagnostics; the
    reaper interval is a one-minute constant.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — Security hardening scoped (issues #18 to #27).** Why: the
+  real test of the tool is installing it on a managed laptop and handing
+  it to other teams, and that means a security review. The assessment
+  found one hole reachable from outside (no Host or Origin check, so DNS
+  rebinding reaches `/exec` from a web page), two local-trust gaps
+  (`active.json` trusted for any TCP host and any token-file path; a 0755
+  state dir with a 0644 log of raw build output, and the sbt token in
+  trace frames), and a supply chain with no pins, no advisory check and
+  no provenance. Ten issues under a new `security` label, each carrying
+  Why / Change / Done when, so the issue is the spec. Risk: cargo-deny
+  will fail unrelated PRs on a new advisory, by design;
+  `github-attestations` is experimental in cargo-dist 0.32.
 - **2026-10-29 — v0.1.1 released (PR #16).** The release workflow passed
   every job; the formula in the tap moved to 0.1.1; `brew upgrade` on
   this Mac installed it, and `sbtctl start` now answers with the usage
@@ -158,25 +183,39 @@ are green.
   console channel returns and the live test's zero-escape assertion is
   what will catch it. Command-parse errors ("Not a valid command") never
   reach a network client; agents get only the synthesized `[error]` line.
-- **2026-10-29 — Phase 1: workspace and JSON-RPC client landed** (branch
-  `feat/workspace-and-jsonrpc`, merged). Why: every later phase sits on
-  the framing, message shapes and connection actor, and the fake lets all
-  of it be tested without a JVM. Risk: resolved in Phase 2 (fixtures are
-  now frozen from captures).
-- **2026-10-29 — Rules layer bootstrapped.** HANDOFF.md transcribed from
-  five Drive photos (255 gutter lines, checked line for line), converted
-  into ARCHITECTURE.md, and the standard agent-rules layer installed:
-  CLAUDE.md/AGENTS.md, METHODOLOGIES.md, RUST_BEST_PRACTICES.md, PROJECT.md
-  bound to GitHub Issues with ARCHITECTURE.md as the wrap-up audit doc.
-  Why: the project arrives as prose only; the rules layer makes every
-  constraint from the first build binding before any code is rewritten.
-  Risk: no source exists in this checkout, so ARCHITECTURE.md describes a
-  build that must be reproduced faithfully — drift between the doc and the
-  rebuilt code is the main hazard until tests exist.
 
 ## Blocked / waiting
 
 - *(nothing)*
+
+## Session handoff
+
+<!-- transient; owned by the checkpoint skill -->
+
+- **Resume here:** start #18 on a branch from `main`: an axum `from_fn`
+  middleware on every route that answers 403 with a new `forbidden`
+  error code when Host is not `127.0.0.1`, `[::1]` or `localhost` (port
+  optional) or when any Origin header is present; a pure, unit-tested
+  Host parser; daemon tests in `crates/sbt-server/tests/`; a CLI test
+  against `--daemon-url http://localhost:<port>`; ARCHITECTURE.md's HTTP
+  contract and `docs/http-api.md` updated in the same PR.
+- The issues were drafted in chat and filed on 2026-10-30, all assigned,
+  bodies cross-linked (#22 and #24 cite each other, #26 cites #18).
+  Nothing about them is written down anywhere but the issues themselves.
+- Deliberately not filed: a gitleaks CI job (GitHub secret scanning and
+  push protection are already on for the repo), and the local pre-commit
+  scrub for names that must never appear in the repo; its word list stays
+  outside the repo.
+- Repo settings observed 2026-10-30, recorded in #21: default workflow
+  token read-only; secret scanning and push protection on; vulnerability
+  alerts, Dependabot security updates and auto-merge off; `main`
+  unprotected. Until #21 lands, docs carve-out PRs are merged by hand
+  with `--squash --delete-branch`, not `--auto`.
+- cargo-dist 0.32 keys verified against its docs for #25:
+  `cargo-auditable`, `cargo-cyclonedx`, `github-attestations`
+  (experimental), `github-action-commits` (a table that survives
+  `dist generate`). There is no macOS signing key, so #27 would be a
+  custom codesign plus notarytool job.
 
 ## Maintenance
 
