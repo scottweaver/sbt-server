@@ -38,6 +38,29 @@ profile alone, or `SBT_SERVER_INSTALL_DIR=/some/dir` to install elsewhere.
 Every release page also carries the archives and SHA-256 sums if you would
 rather download by hand.
 
+## Verify a download
+
+Every release since the one after v0.1.1 ships with provenance. Each
+platform archive carries a GitHub artifact attestation that ties it to this
+repository's release workflow at the tagged commit; with the GitHub CLI:
+
+```bash
+gh attestation verify sbt-server-aarch64-apple-darwin.tar.xz --owner scottweaver
+```
+
+The binaries embed their dependency list (built with cargo-auditable), so
+an installed copy can be checked against the RustSec advisory database
+without the source tree, by `cargo-audit` installed with its
+`binary-scanning` feature:
+
+```bash
+cargo audit bin $(which sbtctl) $(which sbtd)
+```
+
+Each release page also carries a CycloneDX SBOM, `sbt-server.cdx.xml`, for
+security intake forms. The attestation covers the archives and their
+checksums; the installer script and the SBOM are not attested.
+
 ## From source
 
 With a Rust toolchain (1.95 or newer):
