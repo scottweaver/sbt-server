@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/scottweaver/sbt-server/actions/workflows/ci.yml/badge.svg)](https://github.com/scottweaver/sbt-server/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/scottweaver/sbt-server?display_name=tag)](https://github.com/scottweaver/sbt-server/releases/latest)
+[![Coverage](https://codecov.io/gh/scottweaver/sbt-server/branch/main/graph/badge.svg)](https://codecov.io/gh/scottweaver/sbt-server)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **Keep sbt warm for the agents and people who call it a hundred times a day.**
@@ -129,13 +130,16 @@ are in [`.claude/rules/ARCHITECTURE.md`](.claude/rules/ARCHITECTURE.md).
 cargo test --workspace                                                            # no JVM needed
 SBT_SERVER_LIVE=1 cargo test -p sbt-server-core --test live -- --ignored --nocapture  # real sbt
 scripts/smoke.sh                                                                  # end to end
+cargo llvm-cov --workspace --ignore-filename-regex crates/fake-sbt/                # coverage, as CI measures it
 ```
 
 Tests run sbt's protocol against `crates/fake-sbt`, a stand-in that plays
 frames frozen from real sbt 1.11.7 sessions, so the suite is fast and
 deterministic; two ignored live tests and the smoke script exercise a real
 sbt. Rust 1.95 is pinned in `rust-toolchain.toml`; `cargo fmt`,
-`cargo clippy --all-targets -- -D warnings` and the tests gate every PR.
+`cargo clippy --all-targets -- -D warnings` and the tests gate every PR;
+`coverage.yml` measures the same tests with `cargo-llvm-cov` and reports to
+Codecov.
 
 A release is a tag: bump the workspace version, merge, push `vX.Y.Z`, and
 cargo-dist builds the archives, the installer and the Homebrew formula.
