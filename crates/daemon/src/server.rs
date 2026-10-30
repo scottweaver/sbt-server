@@ -9,6 +9,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::http::{StatusCode, header};
+use axum::middleware::from_fn;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -33,6 +34,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/status", get(status))
         .route("/exec", post(exec))
         .route("/shutdown", post(shutdown))
+        .layer(from_fn(crate::guard::require_loopback_client))
         .with_state(state)
 }
 
@@ -139,6 +141,14 @@ impl ApiError {
             StatusCode::BAD_REQUEST,
             ErrorCode::BadRequest,
             format!("request body: {}", rejection.body_text()),
+        )
+    }
+
+    pub(crate) fn forbidden(refusal: &crate::guard::Refusal) -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            ErrorCode::Forbidden,
+            refusal.to_string(),
         )
     }
 

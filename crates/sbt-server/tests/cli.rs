@@ -3,8 +3,9 @@
 
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -163,6 +164,61 @@ fn run(command: &mut Command) -> (Output, String, String) {
     (output, stdout, stderr)
 }
 
+fn sbtd_path() -> PathBuf {
+    let sbtd = PathBuf::from(env!("CARGO_BIN_EXE_sbtctl"))
+        .parent()
+        .unwrap()
+        .join("sbtd");
+    assert!(
+        sbtd.is_file(),
+        "sbtd must be built next to sbtctl (cargo test --workspace does that)"
+    );
+    sbtd
+}
+
+struct RealSbtd {
+    child: Child,
+    port: u16,
+    _state_dir: tempfile::TempDir,
+}
+
+impl RealSbtd {
+    fn start() -> Self {
+        let state_dir = tempfile::tempdir().unwrap();
+        let child = Command::new(sbtd_path())
+            .args(["--bind", "127.0.0.1:0", "--idle-timeout-secs", "0"])
+            .arg("--state-dir")
+            .arg(state_dir.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let addr_file = state_dir.path().join("sbtd.addr");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let addr: SocketAddr = loop {
+            if let Ok(text) = std::fs::read_to_string(&addr_file)
+                && let Ok(addr) = text.parse()
+            {
+                break addr;
+            }
+            assert!(Instant::now() < deadline, "sbtd never wrote its address");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        Self {
+            child,
+            port: addr.port(),
+            _state_dir: state_dir,
+        }
+    }
+}
+
+impl Drop for RealSbtd {
+    fn drop(&mut self) {
+        drop(self.child.kill());
+        drop(self.child.wait());
+    }
+}
+
 fn scripted_events(exit_code: i32) -> Vec<ExecEvent> {
     vec![
         ExecEvent::Started {
@@ -303,14 +359,6 @@ async fn status_and_shutdown_speak_the_contract() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn daemon_start_status_stop_drive_the_real_sbtd() {
-    let sbtd = PathBuf::from(env!("CARGO_BIN_EXE_sbtctl"))
-        .parent()
-        .unwrap()
-        .join("sbtd");
-    assert!(
-        sbtd.is_file(),
-        "sbtd must be built next to sbtctl (cargo test --workspace does that)"
-    );
     let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let url = format!("http://{}", free.local_addr().unwrap());
     drop(free);
@@ -400,5 +448,30 @@ async fn a_server_that_is_not_sbtd_is_named_as_such() {
         "{stderr}"
     );
     assert!(stderr.contains("missing field"), "{stderr}");
+    assert!(stderr.contains("--daemon-url"), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_localhost_daemon_url_is_served_by_the_real_sbtd() {
+    let sbtd = RealSbtd::start();
+    let url = format!("http://localhost:{}", sbtd.port);
+    let (output, stdout, stderr) = run(sbtctl(&url).arg("status"));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(stdout, "no warm sbt instances\n");
+    let (output, stdout, stderr) = run(sbtctl(&url).args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stdout.starts_with("sbtd running: pid "), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forbidden_answer_points_at_the_daemon_url() {
+    let daemon = FakeDaemon::start_failing(
+        403,
+        r#"{"code":"forbidden","message":"Host \"build.example:8077\" is not loopback; sbtd answers only to Host 127.0.0.1, [::1] or localhost"}"#,
+    )
+    .await;
+    let (output, _, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(stderr.contains("not loopback"), "{stderr}");
     assert!(stderr.contains("--daemon-url"), "{stderr}");
 }

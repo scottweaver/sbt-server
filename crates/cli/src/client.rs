@@ -49,6 +49,9 @@ impl ClientError {
                 ErrorCode::ProjectLoadFailed => {
                     Some("fix what the lines above report, then run the command again")
                 }
+                ErrorCode::Forbidden => Some(
+                    "sbtd answers only when addressed as 127.0.0.1, [::1] or localhost; check `--daemon-url` (or SBTCTL_DAEMON_URL)",
+                ),
                 ErrorCode::StartFailed | ErrorCode::BadRequest | ErrorCode::Internal => None,
             },
             Self::NotSbtd { .. } | Self::Protocol(_) => Some(
