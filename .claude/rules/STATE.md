@@ -33,37 +33,45 @@ with curl against the fixture. `crates/cli` is `sbtctl`: passthrough,
 sbt's exit code clamped to 1..=124 and 125 reserved for tool failure.
 `.github/workflows/ci.yml` runs fmt, clippy and the tests on ubuntu and
 macos; `README.md` covers install and usage. The remote
-`scottweaver/sbt-server` exists and `main` is pushed. 107 tests pass; the two
+`scottweaver/sbt-server` exists and `main` is pushed. 121 tests pass; the two
 `#[ignore]` live tests pass with `SBT_SERVER_LIVE=1`; `scripts/smoke.sh`
 passes end to end against real sbt; fmt, `clippy -D warnings` and `test`
 are green.
 
-The active workstream since 2026-10-30 is security hardening: ten issues
-under the `security` label (#18 to #27), each its own PR from `main`, in
-the order "Next up" gives. No code for them exists yet.
+The active workstream since 2026-10-30 is security hardening: issues under
+the `security` label (#18 to #27, plus #34 for CodeQL), each its own PR from
+`main`, never stacked, worked in parallel sessions, one per issue. Landed:
+#18 (sbtd refuses a non-loopback `Host` or any `Origin`, 403 `forbidden`,
+`crates/daemon/src/guard.rs`), #22 (ci.yml: read-only token, SHA-pinned
+actions, `--locked`) and #24 (Dependabot for cargo and GitHub Actions).
+Open and green: #20 (PR #32) and #19 (PR #33).
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `0b5f758`, tagged `v0.1.1` and released; nothing in flight |
+| `main` | trunk | at `edeb306` (#31 merged); `v0.1.1` is the last release |
+| `claude/state-dir-permissions-26f4b8` | #20: state dir 0700, files 0600, token redacted from traces | PR #32, green after a merge from `main`, awaiting review |
+| `fix/validate-active-json` | #19: `active.json` must name loopback TCP and a token file under `~/.sbt` | PR #33, green, awaiting review |
+| *(worker session)* | README badges: release, CI, coverage, security | design dialog + issue first; no branch yet |
 
 ## Next up
 
-1. **Security hardening, one PR per issue, never stacked.** #18 first
-   (refuse a non-loopback Host or any Origin: the one hole reachable from
-   a browser via DNS rebinding), then #19 (validate `active.json`:
-   loopback TCP only, token file under `~/.sbt`) and #20 (state dir 0700,
-   files 0600, sbt token redacted from trace frames). Then #22 (ci.yml:
-   `permissions: contents: read`, SHA-pinned actions, `--locked`) before
-   #21 (ruleset on `main`, vulnerability alerts, auto-merge; settings
-   only, closed by hand) so the required checks already have names; then
-   #24 (Dependabot) and #23 (cargo-deny). #25 (cargo-auditable, CycloneDX
-   SBOM, GitHub attestations, pinned release actions) rides the next
-   release, since its "done when" needs a `v*` tag. #26 (bearer-token
-   auth on sbtd) is a design dialog and structural per ARCHITECTURE.md;
-   #27 (macOS signing and notarization) stays open until a team reports
-   an endpoint policy block.
+1. **Security hardening, one PR per issue, never stacked.** Merge #32
+   (#20) and #33 (#19), wrap each up. Then #23 (cargo-deny: adds a job to
+   ci.yml) and #34 (CodeQL: its own workflow) can run in parallel. #21
+   (ruleset on `main`, vulnerability alerts, auto-merge; settings only,
+   closed by hand) once the required check names are settled: `check
+   (ubuntu-latest)`, `check (macos-latest)`, plus whatever #23 and #34
+   add. #25 (cargo-auditable, CycloneDX SBOM, GitHub attestations, pinned
+   release actions) rides the next release and now also owns the
+   release.yml pinning rule: `release.yml` is cargo-dist-generated and
+   `dist plan` fails on any hand edit, so its action pins go through the
+   `github-action-commits` table, and Dependabot PRs that touch it are
+   closed by hand (#35 was the first). #26 (bearer-token auth on sbtd) is
+   a design dialog and structural per ARCHITECTURE.md; #27 (macOS signing
+   and notarization) stays open until a team reports an endpoint policy
+   block.
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
@@ -82,6 +90,20 @@ the order "Next up" gives. No code for them exists yet.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — #18, #22, #24 landed (PRs #31, #29, #30); #19 and #20
+  open (PRs #33, #32); #34 filed.** Why: the first batch of the security
+  workstream, run as five parallel sessions, one per issue, from `main`.
+  #18 adds `guard.rs`, a `from_fn` layer that parses `Host` into a
+  loopback literal or `localhost` and refuses anything else or any
+  `Origin` with 403 `forbidden`; the accepted IP set is any loopback
+  address, matching `--bind`, a deliberate widening of the issue. Lessons:
+  five PRs editing ARCHITECTURE.md and the integration test files conflict
+  once the first merges (PR #32 needed a merge from `main`); Dependabot's
+  first PR (#35) failed `dist plan` because it edited the generated
+  release.yml, now a constraint recorded on #25; the `dependencies` label
+  Dependabot applies had to be created by hand. Risk: #32 and #33 are
+  green but unreviewed; the parallel briefs told workers not to edit
+  STATE.md, so this entry is the only record of the batch.
 - **2026-10-30 — Security hardening scoped (issues #18 to #27).** Why: the
   real test of the tool is installing it on a managed laptop and handing
   it to other teams, and that means a security review. The assessment
@@ -170,19 +192,6 @@ the order "Next up" gives. No code for them exists yet.
   instance before axum stops so streaming clients get `aborted:
   daemon_shutdown`. Risk: `sbtd` has no auth beyond loopback (unchanged
   from the hand-off), and the reaper interval is a one-minute constant.
-- **2026-10-29 — Phase 2: instance layer landed** (branch `feat/instance`,
-  merged). Why: this is the part the hand-off had no tests for, and the
-  part whose behaviour only live testing could settle; both are now
-  covered (13 fake-child integration tests, 2 live tests). Three facts the
-  sources did not show came from the live runs and are in ARCHITECTURE.md:
-  diagnostics arrive as `build/publishDiagnostics`, a failed command is a
-  JSON-RPC error with code -33000 or -32603 (the latter with the failure
-  text), and `shutdown` is answered by a `shutdown` notification and a
-  closed socket, never a response. Risk: `SBT_TERMINAL_PROPS` is sbtn's
-  private handshake, not documented; if a future sbt renames it the
-  console channel returns and the live test's zero-escape assertion is
-  what will catch it. Command-parse errors ("Not a valid command") never
-  reach a network client; agents get only the synthesized `[error]` line.
 
 ## Blocked / waiting
 
@@ -192,13 +201,15 @@ the order "Next up" gives. No code for them exists yet.
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** start #18 on a branch from `main`: an axum `from_fn`
-  middleware on every route that answers 403 with a new `forbidden`
-  error code when Host is not `127.0.0.1`, `[::1]` or `localhost` (port
-  optional) or when any Origin header is present; a pure, unit-tested
-  Host parser; daemon tests in `crates/sbt-server/tests/`; a CLI test
-  against `--daemon-url http://localhost:<port>`; ARCHITECTURE.md's HTTP
-  contract and `docs/http-api.md` updated in the same PR.
+- **Resume here:** review and merge PR #32 (#20) and PR #33 (#19), run
+  the wrap-up for each, then start #23 and #34 as two parallel sessions
+  from `main`. The README-badges session is in a design dialog about the
+  coverage pipeline (tool, upload service, token) and will file its issue
+  before coding.
+- `sbtctl daemon start` cannot start a daemon for
+  `--daemon-url http://localhost:<port>`: `bind_from_url` hands
+  `localhost:<port>` to `--bind`, which only parses IP literals. Found
+  while writing #18's CLI test; not filed yet.
 - The issues were drafted in chat and filed on 2026-10-30, all assigned,
   bodies cross-linked (#22 and #24 cite each other, #26 cites #18).
   Nothing about them is written down anywhere but the issues themselves.
@@ -210,7 +221,8 @@ the order "Next up" gives. No code for them exists yet.
   token read-only; secret scanning and push protection on; vulnerability
   alerts, Dependabot security updates and auto-merge off; `main`
   unprotected. Until #21 lands, docs carve-out PRs are merged by hand
-  with `--squash --delete-branch`, not `--auto`.
+  with `--squash --delete-branch`, not `--auto`. A `dependencies` label
+  now exists for Dependabot's PRs.
 - cargo-dist 0.32 keys verified against its docs for #25:
   `cargo-auditable`, `cargo-cyclonedx`, `github-attestations`
   (experimental), `github-action-commits` (a table that survives
