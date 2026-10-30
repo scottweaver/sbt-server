@@ -44,6 +44,15 @@ sbtd refuses any `--bind` that is not `127.0.0.1`, `::1` or another
 loopback address, by design. There is no authentication, so it must never
 be reachable from the network.
 
+## `sbtd answers only to Host 127.0.0.1, [::1] or localhost` or `request carries an Origin header`
+
+sbtd refuses any request whose `Host` is not a loopback address or
+`localhost`, and any request carrying an `Origin` header, because a browser
+page could otherwise reach it through DNS rebinding. `sbtctl` hits this only
+when `--daemon-url` (or `SBTCTL_DAEMON_URL`) names some other host, such as
+an `/etc/hosts` alias or the far end of an SSH tunnel; point it at one of the
+three names above.
+
 ## The first command is slow
 
 That is sbt's cold start: a JVM boot plus loading the build definition,

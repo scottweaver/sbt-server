@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
-use sbt_server_core::paths::StateDir;
+use sbt_server_core::paths::{StateDir, StateDirError, StateFile};
 use sbt_server_core::protocol::HealthResponse;
 use thiserror::Error;
 
@@ -31,8 +31,10 @@ pub enum DaemonCtlError {
         #[source]
         source: io::Error,
     },
+    #[error(transparent)]
+    StateDir(#[from] StateDirError),
     #[error("cannot prepare {}: {source}", path.display())]
-    StateDir {
+    LogHandle {
         path: PathBuf,
         #[source]
         source: io::Error,
@@ -149,7 +151,7 @@ pub async fn start(
         .arg(state_dir.path())
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|source| {
-            DaemonCtlError::StateDir {
+            DaemonCtlError::LogHandle {
                 path: state_dir.log_file(),
                 source,
             }
@@ -244,19 +246,9 @@ pub async fn restart(
     start(client, state_dir, bind).await
 }
 
-fn open_log(state_dir: &StateDir) -> Result<File, DaemonCtlError> {
-    std::fs::create_dir_all(state_dir.path()).map_err(|source| DaemonCtlError::StateDir {
-        path: state_dir.path().to_path_buf(),
-        source,
-    })?;
-    File::options()
-        .create(true)
-        .append(true)
-        .open(state_dir.log_file())
-        .map_err(|source| DaemonCtlError::StateDir {
-            path: state_dir.log_file(),
-            source,
-        })
+fn open_log(state_dir: &StateDir) -> Result<File, StateDirError> {
+    state_dir.ensure()?;
+    state_dir.open(StateFile::Log)
 }
 
 fn read_pid_file(state_dir: &StateDir) -> Result<u32, DaemonCtlError> {

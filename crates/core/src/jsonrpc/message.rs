@@ -162,6 +162,24 @@ pub fn encode_request(id: RequestId, method: &str, params: &Value) -> Vec<u8> {
     .into_bytes()
 }
 
+const TOKEN_POINTER: &str = "/params/initializationOptions/token";
+
+/// The frame as text for a trace line, with the `initialize` request's sbt
+/// token replaced. Inbound frames need no redaction: sbt never echoes it.
+#[must_use]
+pub fn redact_frame(body: &[u8]) -> String {
+    let Ok(mut frame) = serde_json::from_slice::<Value>(body) else {
+        return String::from_utf8_lossy(body).into_owned();
+    };
+    match frame.pointer_mut(TOKEN_POINTER) {
+        Some(token) => {
+            *token = json!("<redacted>");
+            frame.to_string()
+        }
+        None => String::from_utf8_lossy(body).into_owned(),
+    }
+}
+
 /// A success response to a request the server sent us.
 #[must_use]
 pub fn encode_response(id: &Value, result: &Value) -> Vec<u8> {
@@ -197,6 +215,30 @@ mod tests {
         assert_eq!(value["id"], json!("7"));
         assert_eq!(value["jsonrpc"], json!("2.0"));
         assert_eq!(value["params"]["commandLine"], json!("compile"));
+    }
+
+    #[test]
+    fn redact_frame_hides_the_initialize_token() {
+        let secret = "84046191245433876643612047032303751629";
+        let body = encode_request(
+            RequestId::new(1),
+            "initialize",
+            &json!({"initializationOptions": {"token": secret}}),
+        );
+        let text = redact_frame(&body);
+        assert!(!text.contains(secret), "{text}");
+        assert!(text.contains("<redacted>"), "{text}");
+        assert!(text.contains("initialize"), "{text}");
+    }
+
+    #[test]
+    fn redact_frame_leaves_other_frames_as_they_are() {
+        let body = encode_request(
+            RequestId::new(2),
+            "sbt/exec",
+            &json!({"commandLine": "compile"}),
+        );
+        assert_eq!(redact_frame(&body).as_bytes(), body.as_slice());
     }
 
     #[test]

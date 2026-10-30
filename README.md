@@ -104,7 +104,9 @@ protocol. Every log line, every byte of raw output and every compiler
 diagnostic is forwarded as a typed event; the command's completion comes
 back as `done` with the exit code, or `aborted` if sbt died, never a fake.
 Instances idle for two hours are shut down. The daemon only ever binds a
-loopback address, by construction.
+loopback address, by construction, and refuses requests that do not name
+one or that carry an `Origin` header, so a web page cannot reach it even
+through DNS rebinding.
 
 ## Documentation
 
