@@ -1,11 +1,12 @@
-# Coverage is a trend to watch, not a merge gate (.claude/rules/REPO_HARDENING.md,
-# section 5): the project status tolerates a one-point dip instead of failing
-# on any decrease, while the patch status still reports what new code left
-# uncovered.
+# Coverage policy (decided 2026-10-30): the project status fails when total
+# coverage falls below 90%, whatever the base commit had; above that line a
+# small dip from one PR is allowed. The patch status reports what new code
+# left uncovered without blocking.
 coverage:
   status:
     project:
       default:
+        target: 90%
         threshold: 1%
     patch:
       default:
