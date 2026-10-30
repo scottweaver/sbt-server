@@ -59,10 +59,12 @@ cargo audit bin $(which sbtctl) $(which sbtd)
 
 Every asset also has a Sigstore signature beside it, `<asset>.sigstore.json`,
 made keyless by the repository's `sign.yml` workflow right after the release
-is published. It needs only [cosign](https://github.com/sigstore/cosign):
+is published. The signing job runs from `main`, which is why the identity
+below names `refs/heads/main` rather than the tag. It needs only
+[cosign](https://github.com/sigstore/cosign):
 
 ```bash
-cosign verify-blob --bundle sbt-server-aarch64-apple-darwin.tar.xz.sigstore.json --certificate-identity-regexp '^https://github.com/scottweaver/sbt-server/\.github/workflows/sign\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com sbt-server-aarch64-apple-darwin.tar.xz
+cosign verify-blob --bundle sbt-server-aarch64-apple-darwin.tar.xz.sigstore.json --certificate-identity https://github.com/scottweaver/sbt-server/.github/workflows/sign.yml@refs/heads/main --certificate-oidc-issuer https://token.actions.githubusercontent.com sbt-server-aarch64-apple-darwin.tar.xz
 ```
 
 Each release page also carries a CycloneDX SBOM, `sbt-server.cdx.xml`, for

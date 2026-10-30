@@ -48,39 +48,47 @@ SHA-pinned actions, `--locked`), #24 (Dependabot), #36 (coverage to
 Codecov), #40 (Scorecard), #42 (SECURITY.md), #43 (cargo-fuzz targets),
 #34 (CodeQL, check `analyze (rust)`), #25 (cargo-auditable, CycloneDX
 SBOM, GitHub attestations, release.yml pinned through
-`[dist.github-action-commits]`) and #21 (ruleset `protect main`,
-vulnerability alerts, security updates, auto-merge; applied by hand). The
-rubric all of it amounts to is `.claude/rules/REPO_HARDENING.md`,
-installed from the global rules layer. Open: #23 (cargo-deny), #26
-(bearer-token design dialog), #27 (signing decision).
+`[dist.github-action-commits]`), #21 (ruleset `protect main`,
+vulnerability alerts, security updates, auto-merge; applied by hand) and
+#52 (Sigstore bundles beside every release asset, `sign.yml`). #27 is
+closed as not planned: no paid Apple membership, so no code signing.
+`v0.1.2` shipped on 2026-10-30 with attestations, a CycloneDX SBOM and 13
+`.sigstore.json` bundles, all verified locally. The rubric all of it
+amounts to is `.claude/rules/REPO_HARDENING.md`, installed from the global
+rules layer. Open: #23 (cargo-deny), #26 (bearer-token design dialog),
+#54 (CONTRIBUTING.md and CHANGELOG.md, PR #55). The next milestone is
+`v1.0.0`, cut once the Scorecard is at a reasonable grade; 1.0 freezes
+the HTTP contract and the CLI surface.
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `ffc45c0` (#48 merged); `v0.1.1` is the last release |
-| `release/v0.1.2` | version bump; the release that proves #25 | PR #49, awaiting CI and merge; tag after |
-| `docs/state-hardening` | this refresh, REPO_HARDENING.md and its CLAUDE.md row | docs carve-out PR |
+| `main` | trunk | at `0c64dbf` (#53 merged); `v0.1.2` is the last release |
+| `docs/contributing-changelog` | #54: CONTRIBUTING.md, CHANGELOG.md, README link, smoke.sh package name | PR #55, awaiting CI and merge |
+| `docs/v0.1.2-released` | this refresh, the cosign identity fix, the rubric with ceilings | docs carve-out PR |
 
 ## Next up
 
-1. **Finish the hardening batch.** Merge PR #49, tag `v0.1.2`, and check
-   the release carries `sbt-server.cdx.xml` and that
-   `gh attestation verify <archive> --owner scottweaver` passes; that is
-   what can lift Scorecard's Signed-Releases (caveat in Session handoff).
-   #23 (cargo-deny) is one PR adding a job to ci.yml and a `deny.toml`;
-   afterwards add its check name to ruleset `protect main` (id
-   26239811), which requires `check (ubuntu-latest)`,
-   `check (macos-latest)` and `analyze (rust)`, so every PR branch must
-   contain `codeql.yml` (a branch cut before #47 needs `main` merged in).
-   #26 is a design dialog and structural per ARCHITECTURE.md; #27 stays
-   open until a team reports an endpoint policy block. Scorecard scored
-   `main` 5/10 on 2026-10-30 before #34, #25 and #21 landed; expected
-   after the next run: SAST, Branch-Protection and Pinned-Dependencies
-   up; Token-Permissions still 0 (cargo-dist writes top-level
-   `contents: write` with no knob in 0.32); Code-Review, Maintained,
-   Contributors and CII-Best-Practices accepted as is; Packaging
-   unscored.
+1. **The road to v1.0.0.** Scorecard was 5.8 on `0c64dbf` before the
+   signed release; the review of 2026-10-30 fixed the ceilings:
+   Signed-Releases should flip to 10 on the next run (13 bundles are on
+   `v0.1.2`); SAST is 7 and climbs by itself to 10 once all of the last
+   30 merged PRs carry a CodeQL check run (about 27 more merges; #48
+   never counts); Pinned-Dependencies stays 7 (cargo-dist's three
+   `curl | sh` lines, no knob); Branch-Protection is 3 and can reach 4
+   with `strict_required_status_checks_policy` on ruleset 26239811,
+   a decision the user has not made (it forces every PR to merge `main`
+   first); CII-Best-Practices is 0 until the user registers the repo at
+   bestpractices.dev (2 points on registration, 5 at passing; #55 adds
+   the two missing files). Token-Permissions, Code-Review, Contributors
+   and Maintained are structural. A reasonable grade is therefore about
+   7.5. Remaining work before 1.0.0: merge #55 and register the badge;
+   #23 (cargo-deny) in its own session, then add its check name to
+   ruleset 26239811, which requires `check (ubuntu-latest)`,
+   `check (macos-latest)` and `analyze (rust)`; decide #26 (bearer-token
+   auth, structural) because 1.0 freezes the agent-facing contract, as
+   do the `localhost` daemon-URL bug and the unrendered diagnostics below.
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
@@ -100,22 +108,23 @@ installed from the global rules layer. Open: #23 (cargo-deny), #26
 
 ## Most recent meaningful progress
 
-- **2026-10-30 — #34, #25 and #21 landed (PRs #47, #48; #21 by hand);
-  v0.1.2 bump open (PR #49); REPO_HARDENING.md extracted.** Why: the
-  three Scorecard gaps that were work rather than structure. CodeQL
-  (advanced setup, `security-and-quality`, build mode none) found nothing
-  on the current tree; #25 turns on cargo-auditable, CycloneDX and GitHub
-  attestations in `dist-workspace.toml` and pins every action in the
-  generated release.yml through `[dist.github-action-commits]`; #21 is
-  ruleset `protect main` plus vulnerability alerts, security updates and
-  auto-merge. The rubric those issues add up to now lives in the global
-  rules layer (`my-dev-environment` PR #32) and is installed here.
-  Lessons: the ruleset requires `analyze (rust)` by name, so a PR branch
-  without `codeql.yml` can never merge; the auto-mode classifier refuses
-  to merge PRs, so merges are the user's. Risk: nothing proves the
-  attestations until `v0.1.2` runs; #47 and #48 merged on green CI
-  without a second reader.
-- **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
+- **2026-10-30 — v0.1.2 released with provenance and Sigstore bundles;
+  #51, #52 landed (PRs #51, #53); #27 closed; Scorecard re-reviewed.**
+  Why: the release proves #25, and Signed-Releases needs assets, not the
+  attestations API. The first tag hit GitHub's `macos-14` brownout (the
+  image retires 2026-11-02; cargo-dist 0.32 still picked it), fixed by
+  `[dist.github-custom-runners]` and a moved tag; `sign.yml` runs on
+  `workflow_run` because a `GITHUB_TOKEN`-created release fires no
+  `release:` event, and its certificate identity is `@refs/heads/main`,
+  which the first draft of the docs got wrong. Four review agents fixed
+  the ceilings now recorded in Next up and in REPO_HARDENING.md. Lessons:
+  `gh pr merge --auto --delete-branch` does not delete the remote branch
+  (ten merged branches linger; the repo setting "automatically delete
+  head branches" would); `brew upgrade` needs `brew update` first to see
+  a new formula. Risk: the Dependabot token may not let CodeQL upload,
+  leaving SAST gaps; nothing verified the Linux or Intel archives beyond
+  their checksums.
+- **2026-10-30 — #34, #25 and #21 landed- **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
   #40 via PR #41); #42 and #43 opened with PRs #44 and #45.** Why: a
   team evaluating the tool reads the badge row first. `coverage.yml` runs
   cargo-llvm-cov on ubuntu with the spawned `sbtd`/`sbtctl`/`fake-sbt`
@@ -201,57 +210,43 @@ installed from the global rules layer. Open: #23 (cargo-deny), #26
   `scottweaver/homebrew-tap` exists. Risk: the `HOMEBREW_TAP_TOKEN`
   secret is still missing and nothing has been tagged, so the release
   path is unexercised in CI.
-- **2026-10-29 — Fix: test-framework output was lost** (issues #1 and #2,
-  PR #3, merged at `289384b`, CI green on ubuntu and macos). Found by the user on a real munit
-  project right after the first install: `sbtctl test` printed only the
-  `[info] Passed:` summary. Cause: a channel's terminal is sbt's
-  `NullTerminal` until the client sends `sbt/attach`, and the test
-  framework writes its lines there. Fix: the handshake now attaches as a
-  non-interactive client (as sbtn does for batch commands), the client
-  answers sbt's terminal queries as a dumb 80x24 terminal, and, as sbtn
-  does, `build/logMessage` is dropped except at debug level because the
-  attached terminal stream carries the same lines rendered; lines with
-  sbt's `[level] ` prefix are parsed back into `log` events. Fixture
-  refrozen from an attached capture. The first CI run on `main` (ubuntu)
-  then exposed a second defect, fixed in the same PR: the child's exit was
-  reported before its pipes were drained, so a fast-dying sbt's last lines
-  (the ones that explain a failed project load) could be missing from
-  `project_load_failed` (issue #2). Risk: sbt's terminal queries are
-  answered generically; an sbt that asks something new would get "method
-  not found", and its `getCapability` has no timeout.
 
 ## Blocked / waiting
 
-- The `v0.1.2` tag waits on PR #49 merging and the user's go; the release
-  workflow is the only test of #25.
+- Registering at bestpractices.dev needs the user's GitHub login; nothing
+  else is blocked.
 
 ## Session handoff
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** merge PR #49, tag `v0.1.2` on its merge commit, watch
-  the release workflow (first run of the attest and cyclonedx jobs),
-  verify with `gh attestation verify` and `brew upgrade sbt-server`; the
-  push to `main` reruns Scorecard, read the new score. Then #23 in its own
-  session from `main`, and add its check to the ruleset.
+- **Resume here:** merge PR #55, then register the repo at
+  bestpractices.dev and answer the form (the crypto criteria are N/A).
+  Read the Scorecard after the next push to `main` (Signed-Releases
+  should be 10). Then #23 in its own session from `main`, and add its
+  check to ruleset 26239811. Decide whether to turn on strict up-to-date
+  checks (Branch-Protection 3 to 4) and whether to enable "automatically
+  delete head branches" on the repo.
 - Ruleset `protect main` (id 26239811) is active since 2026-10-30; docs
-  carve-out PRs now merge with `gh pr merge --auto --squash
-  --delete-branch`, first exercised by this refresh's own PR.
-- Merged branches still on the remote because their PRs were merged from
-  the web UI: `ci/codeql`, `ci/scorecard`,
-  `claude/release-provenance-db862a`, `docs/security-policy`,
-  `test/fuzz-parsers`, `dependabot/github_actions/actions/checkout-7.0.1`.
-  Delete once the user confirms.
+  carve-out PRs merge with `gh pr merge --auto --squash --delete-branch`,
+  but the remote branch survives (see below).
+- Merged branches still on the remote: `ci/codeql`, `ci/scorecard`,
+  `ci/sigstore-release-signing`, `claude/release-provenance-db862a`,
+  `dependabot/github_actions/actions/checkout-7.0.1`,
+  `docs/security-policy`, `docs/state-hardening`, `fix/macos-15-runner`,
+  `test/fuzz-parsers`. Delete once the user confirms.
+- Releasing: `brew update` before `brew upgrade sbt-server`, or the tap
+  index still shows the previous version. The release workflow is
+  followed by `sign.yml` (about a minute); the bundles are not there
+  until it finishes.
 - Fuzzing needs a nightly at or above the workspace's `rust-version`
   1.95: `rustup toolchain install nightly`, then
   `cargo +nightly fuzz run <target>` from `fuzz/`; the older dated
   nightlies on this machine fail the version check. cargo-fuzz is
   installed locally.
-- Signed-Releases caveat: Scorecard looks for `*.intoto.jsonl` or
-  `*.sigstore.json` release assets, while GitHub attestations live in the
-  attestations API, so `v0.1.2` may lift Pinned-Dependencies without
-  lifting Signed-Releases. If so, the fix is an attestation bundle
-  attached as a release asset, a cargo-dist question.
+- Scorecard's Signed-Releases reads the `.sigstore.json` assets; the
+  attestations API is invisible to it. Verify a download with the
+  command in `docs/install.md` (identity `sign.yml@refs/heads/main`).
 - `sbtctl daemon start` cannot start a daemon for
   `--daemon-url http://localhost:<port>`: `bind_from_url` hands
   `localhost:<port>` to `--bind`, which only parses IP literals. Found
