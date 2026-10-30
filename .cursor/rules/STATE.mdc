@@ -50,16 +50,15 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | docs (#11), README (#15) and the forgot-daemon fix (#14) merged after `v0.1.0`; 0.1.1 release in flight |
+| `main` | trunk | at `7c6eee7`, tagged `v0.1.1` and released; nothing in flight |
 
 ## Next up
 
-1. **Release 0.1.1**: this bump merges, then `git tag -a v0.1.1 && git
-   push origin v0.1.1`; after the workflow, `brew upgrade sbt-server` and
-   check `sbtctl start` gives the usage error. Releasing is always: bump
-   the workspace version, merge, push a `v*` tag. The `HOMEBREW_TAP_TOKEN`
-   secret is a fine-grained PAT scoped to the tap with Contents
-   read/write; when it expires only the formula push fails.
+1. **Releasing** is always: bump the workspace version in a PR, merge,
+   push a `v*` tag, and the workflow does the rest; then
+   `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
+   fine-grained PAT scoped to the tap with Contents read/write; when it
+   expires only the formula push fails.
 2. **Socialising it**: `docs/agents.md` is the page to hand to a team. If
    an endpoint policy rejects unsigned binaries, code signing and
    notarization become the next ticket; nothing in the pipeline does them.
@@ -76,6 +75,11 @@ are green.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — v0.1.1 released (PR #16).** The release workflow passed
+  every job; the formula in the tap moved to 0.1.1; `brew upgrade` on
+  this Mac installed it, and `sbtctl start` now answers with the usage
+  error, exit 2, while a real `sbtctl test` still runs through. Homebrew
+  users get the fix with `brew upgrade sbt-server`.
 - **2026-10-29 — Docs, README and the forgot-daemon fix landed** (PRs
   #11, #15, #14; issues #6, #7, #13). Why: the user's first real-project
   run surfaced `sbtctl start` as the common slip with feedback that never
