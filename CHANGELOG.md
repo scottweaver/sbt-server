@@ -39,10 +39,10 @@ change nothing.
 
 ### Verified
 
-- The Intel macOS archive runs under Rosetta and the Linux x86_64 archive
-  runs in an Ubuntu 24.04 container (daemon start, status and stop, with
-  the token); until this release only the Apple silicon build had been run
-  by hand. Linux remains unsupported until it has a real user.
+- The 0.1.2 Intel macOS archive runs under Rosetta and the 0.1.2 Linux
+  x86_64 archive runs in an Ubuntu 24.04 container (daemon start, status
+  and stop); until now only the Apple silicon build had been run by hand.
+  Linux remains unsupported until it has a real user.
 
 ## [0.1.2] - 2026-10-30
 
