@@ -60,37 +60,31 @@ amounts to is `.claude/rules/REPO_HARDENING.md`, installed from the global
 rules layer. #23 (cargo-deny, PR #60) and #26 (bearer-token auth, PR #62)
 landed on 2026-10-30; no issue is open. Every route but `/health` now
 requires the token `sbtd` mints at start (`sbtd.token` in the state dir),
-which `sbtctl` reads on its own; this is the one contract change since
-v0.1.2. The next milestone is `v1.0.0`, cut once the Scorecard is at a
-reasonable grade; 1.0 freezes the HTTP contract and the CLI surface.
+which `sbtctl` reads on its own; this was the one contract change since
+v0.1.2. **`v1.0.0` shipped on 2026-10-30**: the HTTP contract and the CLI
+surface are frozen (a minor release may add, never remove or reinterpret),
+the release carries 32 assets (archives, checksums, installer, formula,
+SBOM, 13 Sigstore bundles, 6 provenance files), all verified locally,
+and Homebrew serves 1.0.0.
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `f136e9f` (#62 merged); `v0.1.2` is the only release |
-| `docs/state-auth-landed` | this refresh | docs carve-out PR |
+| `main` | trunk | at `97b4d9f` (#68 merged); `v1.0.0` is the current release |
+| `docs/state-v1` | this refresh | docs carve-out PR |
 
 ## Next up
 
-1. **The road to v1.0.0.** Scorecard is 6.6 on `6129c46` (before #62):
-   Signed-Releases 10, CII-Best-Practices 5 (bestpractices.dev/projects/
-   16104, "passing" since 2026-10-30, Baseline Level 1 at 100%), SAST 7
-   climbing by itself to 10 once all of the last 30 merged PRs carry a
-   CodeQL check run (about 25 more merges; #48 never counts),
-   Pinned-Dependencies 7 (cargo-dist's three `curl | sh` lines, no knob),
-   Branch-Protection 3 (the user chose not to turn on strict up-to-date
-   checks for the 4th point); Token-Permissions, Code-Review,
-   Contributors and Maintained are structural. The hardening is done;
-   what remains before 1.0.0 is the freeze itself: fix or document the
-   `localhost` daemon-URL bug and the unrendered diagnostics (below), try
-   the Intel macOS and Linux archives by hand (only Apple Silicon has
-   ever been run), write the 1.0.0 CHANGELOG section (the bearer token
-   is the one breaking change since 0.1.2: direct API callers must send
-   `Authorization: Bearer`) and a stability statement in the README, pass
-   over `docs/agents.md`, then bump and tag. Coverage policy: Codecov's
-   project status fails below 90% (`codecov.yml`, decided 2026-10-30);
-   `main` is at 90.5%.
+1. **After 1.0.0.** Nothing is scheduled. Candidates, each a design
+   dialog or a small PR: Linux as a supported platform (the archive runs
+   in a container; it needs a real user and a CI smoke run), the
+   cold-start boot time in the `[success]` summary, the one-minute reaper
+   interval as a flag, a launchd recipe for running sbtd at login, sbt 2.x
+   (only 1.x's protocol has been exercised). Scorecard: SAST climbs by
+   itself to 10 over the next ~25 merges; everything else fixable is at
+   its ceiling (Pinned-Dependencies 7, Branch-Protection 3 by choice).
+   Coverage policy: Codecov's project status fails below 90%.
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
@@ -110,6 +104,21 @@ reasonable grade; 1.0 freezes the HTTP contract and the CLI surface.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — v1.0.0 released (PR #66, #68); #64 fixed (PR #65);
+  CodeQL badge (PR #67).** Why: the freeze list was short and the
+  hardening was done. The first `v1.0.0` tag published an empty release:
+  the CHANGELOG's literal `Authorization: Bearer <token>` was masked by
+  the Actions runner, which then dropped cargo-dist's plan output, so
+  every build job was skipped while `host` published anyway (the plan
+  job's "Skip output 'val'" warning is the tell). The release and tag were
+  deleted, the phrase reworded (#68, rule recorded in ARCHITECTURE.md and
+  the global rubric), and the second tag built, signed and attested
+  cleanly. Verified: the Intel 0.1.2 archive under Rosetta and the Linux
+  one in an Ubuntu container before the release; the 1.0.0 Apple Silicon
+  archive's checksum, attestation, offline provenance and cosign bundles
+  after it; `brew upgrade` to 1.0.0. Risk: the daemon on the dev Mac was
+  still the 0.1.1 process after the upgrade, so the token path has not
+  run on a long-lived daemon yet.
 - **2026-10-30 — #26 bearer-token auth landed (PR #62); #23 cargo-deny
   (PR #60) and the Best Practices badge (PR #61) landed; no open
   issues.** Why: loopback plus Host/Origin admitted every local user,
@@ -228,14 +237,6 @@ reasonable grade; 1.0 freezes the HTTP contract and the CLI surface.
   branch is deleted, so the stacked README PR (#12) had to be reopened
   as #15 from `main`; do not stack PRs, or merge the top one first. Risk:
   Homebrew users on 0.1.0 lack the fix until 0.1.1 ships.
-- **2026-10-29 — v0.1.0 released.** Tag `v0.1.0` on `66a6c08`; the
-  release workflow passed every job, the release carries the three
-  archives, checksums, `sbt-server-installer.sh` and the formula, and the
-  formula landed in `scottweaver/homebrew-tap`. Verified on this Mac:
-  `brew install scottweaver/tap/sbt-server` put 0.1.0 under
-  `/opt/homebrew/bin`, and `sbtctl test` on a real munit project ran
-  through it. Risk: only macOS arm64 was exercised by hand; the x86_64
-  macOS and Linux archives are built and checksummed but untried.
 
 ## Blocked / waiting
 
@@ -245,13 +246,10 @@ reasonable grade; 1.0 freezes the HTTP contract and the CLI surface.
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** the hardening workstream is closed. Next is the
-  1.0.0 freeze list in Next up, each item a small PR from `main`: file
-  the `localhost` daemon-URL bug and fix it, decide and document the
-  diagnostics rendering, run the Intel macOS and Linux v0.1.2 archives
-  by hand, write the 1.0.0 CHANGELOG section and README stability note,
-  then bump to 1.0.0 and tag. Read the Scorecard after this PR's push
-  (expected about 6.6; SAST climbs with each merge).
+- **Resume here:** nothing is in flight. If the dev Mac's daemon is
+  still 0.1.1 (`sbtctl daemon status` shows the version), `sbtctl daemon
+  restart` brings up 1.0.0 with the token. my-dev-environment PR #34 (the
+  rubric's release-notes rule) may still be open.
 - Ruleset `protect main` (id 26239811) requires `check (ubuntu-latest)`,
   `check (macos-latest)`, `analyze (rust)` and `deny`; docs
   carve-out PRs merge with `gh pr merge --auto --squash --delete-branch`,
