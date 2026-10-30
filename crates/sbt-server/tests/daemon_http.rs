@@ -359,3 +359,20 @@ async fn concurrent_execs_on_one_build_root_are_serialized() {
         started.elapsed()
     );
 }
+
+#[tokio::test]
+async fn a_malformed_body_gets_sbtds_own_error_shape() {
+    let daemon = Daemon::start(&[]).await;
+    let response = daemon
+        .client
+        .post(daemon.url("/exec"))
+        .header("content-type", "application/json")
+        .body(r#"{"cwd":"/tmp"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    let error: ErrorResponse = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::BadRequest);
+    assert!(error.message.contains("command_line"), "{}", error.message);
+}

@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -52,8 +53,9 @@ async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
 
 async fn exec(
     State(state): State<Arc<AppState>>,
-    Json(request): Json<ExecRequest>,
+    body: Result<Json<ExecRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
+    let Json(request) = body.map_err(|rejection| ApiError::rejected(&rejection))?;
     let root = route(&request.cwd)?;
     let command = CommandLine::new(request.command_line).map_err(|error| {
         ApiError::new(
@@ -80,8 +82,9 @@ fn ndjson_line(event: &ExecEvent) -> Result<Bytes, serde_json::Error> {
 
 async fn shutdown(
     State(state): State<Arc<AppState>>,
-    Json(request): Json<ShutdownRequest>,
+    body: Result<Json<ShutdownRequest>, JsonRejection>,
 ) -> Result<Json<ShutdownResponse>, ApiError> {
+    let Json(request) = body.map_err(|rejection| ApiError::rejected(&rejection))?;
     let stopped = match request {
         ShutdownRequest::All => state
             .registry
@@ -127,6 +130,16 @@ impl ApiError {
                 output: None,
             },
         }
+    }
+
+    /// A body axum could not turn into the request type, reported in
+    /// sbtd's own error shape instead of axum's plain-text 422.
+    fn rejected(rejection: &JsonRejection) -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            ErrorCode::BadRequest,
+            format!("request body: {}", rejection.body_text()),
+        )
     }
 
     fn start(error: &StartError) -> Self {

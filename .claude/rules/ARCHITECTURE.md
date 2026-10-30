@@ -259,9 +259,10 @@ crates/
   JSON-RPC *error* response: its `code` is the exit code when it is in
   1..=255, and sbt's generic `UnknownError` (-33000, sent for any failed
   command, message empty, captured live) means exit code 1; any other code
-  is an internal sbt failure, also reported as exit code 1. The text of a
-  command-parse error ("Not a valid command") reaches only sbt's own
-  console, never a network client.
+  is an internal sbt failure, also reported as exit code 1. Since the client
+  attaches, sbt's command-parse errors ("Not a valid command: …") arrive
+  on the terminal stream as `[error]` lines; before the attach they
+  reached only sbt's own console.
 - **Compiler diagnostics are a captured channel.** sbt 1.x sends them as
   `build/publishDiagnostics` (BSP-shaped: `textDocument.uri`,
   `diagnostics`, `reset`; captured live), and the LSP
@@ -326,8 +327,18 @@ guarantee.
 - **Exit codes**: sbt's own code passes through, clamped to 1..=124 when
   nonzero; **125** means the tool failed rather than the build (an
   unreachable daemon, a refused request, an `aborted` exec, a protocol
-  error), so the two can never collide. `daemon status` exits 1 when sbtd
-  is not running.
+  error), so the two can never collide; **2** is a usage mistake. `daemon
+  status` exits 1 when sbtd is not running.
+- **A bare `start`, `stop` or `restart` as the whole sbt command line is
+  refused** (exit 2) with a message naming `sbtctl daemon <verb>`, because
+  forgetting `daemon` is the common slip and sbt's "Not a valid command"
+  parade never mentions it; `sbtctl -- start` is the one way to send such
+  a word to sbt. Error messages carry hints: an unreachable daemon points
+  at `daemon start`, `no_build_root` at running inside a project or
+  `-C`, and a non-2xx answer that is not sbtd's own error shape is
+  reported as "does not speak sbtd's protocol" with a pointer at
+  `--daemon-url`, never echoed raw. `sbtd` itself answers a malformed body
+  with its own `bad_request` JSON, not axum's plain-text 422.
 - **`sbtctl status`** lists warm instances: build root, pid, phase
   (booting, idle, running), idle time, uptime. **`sbtctl shutdown` /
   `sbtctl shutdown --all`** stop one or all warm instances (bounded

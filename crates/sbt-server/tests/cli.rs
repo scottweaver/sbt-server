@@ -7,6 +7,7 @@ use std::process::{Command, Output};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::extract::State;
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use sbt_server_core::protocol::{
@@ -16,6 +17,7 @@ use sbt_server_core::protocol::{
 
 struct FakeState {
     events: Vec<ExecEvent>,
+    error: Option<(u16, String)>,
     execs: Mutex<Vec<ExecRequest>>,
     shutdowns: Mutex<Vec<ShutdownRequest>>,
 }
@@ -28,8 +30,18 @@ struct FakeDaemon {
 
 impl FakeDaemon {
     async fn start(events: Vec<ExecEvent>) -> Self {
+        Self::new(events, None).await
+    }
+
+    /// Answers every `/exec` with this status and body instead of events.
+    async fn start_failing(status: u16, body: &str) -> Self {
+        Self::new(Vec::new(), Some((status, body.to_owned()))).await
+    }
+
+    async fn new(events: Vec<ExecEvent>, error: Option<(u16, String)>) -> Self {
         let state = Arc::new(FakeState {
             events,
+            error,
             execs: Mutex::new(Vec::new()),
             shutdowns: Mutex::new(Vec::new()),
         });
@@ -97,17 +109,29 @@ async fn status() -> Json<StatusResponse> {
     })
 }
 
-async fn exec(State(state): State<Arc<FakeState>>, Json(request): Json<ExecRequest>) -> String {
+async fn exec(
+    State(state): State<Arc<FakeState>>,
+    Json(request): Json<ExecRequest>,
+) -> axum::response::Response {
     state
         .execs
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(request);
+    if let Some((status, body)) = &state.error {
+        let status = axum::http::StatusCode::from_u16(*status).unwrap();
+        return (status, body.clone()).into_response();
+    }
     state
         .events
         .iter()
-        .map(|event| serde_json::to_string(event).unwrap() + "\n")
-        .collect()
+        .map(|event| {
+            serde_json::to_string(event).unwrap()
+                + "
+"
+        })
+        .collect::<String>()
+        .into_response()
 }
 
 async fn shutdown(
@@ -328,4 +352,53 @@ async fn daemon_start_status_stop_drive_the_real_sbtd() {
     assert!(stdout.contains("not running"), "{stdout}");
     let (output, _, _) = run(ctl().args(["daemon", "status"]));
     assert_eq!(output.status.code(), Some(1));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bare_daemon_verb_is_refused_with_a_pointer_to_daemon() {
+    let daemon = FakeDaemon::start(scripted_events(0)).await;
+    for verb in ["start", "stop", "restart"] {
+        let (output, _, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", verb]));
+        assert_eq!(output.status.code(), Some(2), "{verb}: {stderr}");
+        assert!(
+            stderr.contains(&format!("sbtctl daemon {verb}")),
+            "{stderr}"
+        );
+        assert!(stderr.contains(&format!("sbtctl -- {verb}")), "{stderr}");
+    }
+    assert!(daemon.execs().is_empty(), "nothing was sent to sbt");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_double_dash_sends_the_word_to_sbt_anyway() {
+    let daemon = FakeDaemon::start(scripted_events(0)).await;
+    let (output, _, _) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "--", "start"]));
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(daemon.execs()[0].command_line, "start");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sbtds_own_errors_come_with_a_hint() {
+    let daemon = FakeDaemon::start_failing(
+        400,
+        r#"{"code":"no_build_root","message":"no build.sbt or project/build.properties in /tmp or any parent directory"}"#,
+    )
+    .await;
+    let (output, _, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(stderr.contains("no build.sbt"), "{stderr}");
+    assert!(stderr.contains("-C <dir>"), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_that_is_not_sbtd_is_named_as_such() {
+    let daemon = FakeDaemon::start_failing(400, r#"{"message":"missing field `command`"}"#).await;
+    let (output, _, stderr) = run(sbtctl(&daemon.url).args(["-C", "/tmp", "compile"]));
+    assert_eq!(output.status.code(), Some(125));
+    assert!(
+        stderr.contains("does not speak sbtd's protocol"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("missing field"), "{stderr}");
+    assert!(stderr.contains("--daemon-url"), "{stderr}");
 }
