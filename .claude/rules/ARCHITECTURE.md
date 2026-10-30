@@ -418,6 +418,29 @@ guarantee.
 - **Versions are unified**: one workspace version, one tag (`v0.1.0`), one
   release; `fake-sbt` (`publish = false`) and the library crates are never
   released. Licensed Apache-2.0.
+- **Every release carries provenance** (decided 2026-10-30, issue #25; the
+  first release to exercise it is the one after `v0.1.1`). The binaries
+  are built with cargo-auditable (`cargo-auditable = true`), so
+  `cargo audit bin` can read an installed `sbtctl`'s dependency list; a
+  CycloneDX SBOM, `sbt-server.cdx.xml`, is attached to the release
+  (`cargo-cyclonedx = true`); and each platform archive and its checksum is
+  signed with a GitHub artifact attestation from the build job
+  (`github-attestations = true`, experimental in cargo-dist 0.32), so
+  `gh attestation verify <archive> --owner scottweaver` proves it came from
+  this repository's release workflow at the tagged commit. The installer
+  script and the SBOM are not attested.
+- **`release.yml` is generated and never hand-edited.** `dist plan` fails in
+  CI on any drift from `dist-workspace.toml`, so the GitHub-owned actions it
+  uses (`actions/checkout`, `actions/upload-artifact`,
+  `actions/download-artifact`, `actions/attest`) are pinned to full commit
+  SHAs through the `[dist.github-action-commits]` table in that file, which
+  survives `dist generate`; the version each SHA corresponds to is a comment
+  on its table row, because dist emits no `# vX.Y.Z` comment on the `uses:`
+  lines. A Dependabot PR that edits `release.yml` directly is closed and the
+  bump made in the table instead. The workflow's top-level
+  `contents: write` is cargo-dist's own and has no knob in 0.32; the build
+  jobs get job-level `attestations: write`, `contents: read`,
+  `id-token: write` from dist itself.
 
 ## Verified scope and open items
 
