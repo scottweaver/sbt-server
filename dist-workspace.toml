@@ -31,6 +31,12 @@ cargo-cyclonedx = true
 # this repository's release workflow. Experimental in cargo-dist 0.32.
 github-attestations = true
 
+# GitHub deprecated the macos-14 image (actions/runner-images#13518):
+# brownouts cancel jobs on it until it is retired on 2026-11-02, and dist
+# 0.32 still picks it for Apple Silicon. Intel macOS already gets macos-15.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
+
 # Pin the GitHub-owned actions release.yml uses to full commit SHAs instead
 # of mutable tags (OpenSSF Scorecard Pinned-Dependencies). release.yml is
 # generated, so this table is the only place to change a pin; Dependabot
