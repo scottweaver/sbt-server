@@ -9,6 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use fake_sbt::{BOOT_FAIL_ENV, SCENARIO_ENV};
+use sbt_server_core::auth::BearerToken;
 use sbt_server_core::protocol::{
     AbortReason, ErrorCode, ErrorResponse, ExecEvent, ExecRequest, HealthResponse, InstancePhase,
     LogLevel, ShutdownRequest, ShutdownResponse, StatusResponse,
@@ -20,6 +21,7 @@ struct Daemon {
     addr: SocketAddr,
     state_dir: tempfile::TempDir,
     client: reqwest::Client,
+    token: BearerToken,
 }
 
 impl Daemon {
@@ -52,16 +54,22 @@ impl Daemon {
             assert!(Instant::now() < deadline, "sbtd never wrote its address");
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
+        let token = std::fs::read_to_string(state_dir.path().join("sbtd.token")).unwrap();
         Self {
             child,
             addr,
             state_dir,
             client: reqwest::Client::new(),
+            token: BearerToken::parse(&token).unwrap(),
         }
     }
 
     fn url(&self, path: &str) -> String {
         format!("http://{}{path}", self.addr)
+    }
+
+    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        request.header("authorization", self.token.authorization_value())
     }
 
     async fn health(&self) -> Option<HealthResponse> {
@@ -76,8 +84,7 @@ impl Daemon {
     }
 
     async fn status(&self) -> StatusResponse {
-        self.client
-            .get(self.url("/status"))
+        self.authorized(self.client.get(self.url("/status")))
             .send()
             .await
             .unwrap()
@@ -87,8 +94,7 @@ impl Daemon {
     }
 
     async fn exec(&self, cwd: &Path, command_line: &str, verbose: bool) -> reqwest::Response {
-        self.client
-            .post(self.url("/exec"))
+        self.authorized(self.client.post(self.url("/exec")))
             .json(&ExecRequest {
                 cwd: cwd.to_path_buf(),
                 command_line: command_line.to_owned(),
@@ -110,8 +116,7 @@ impl Daemon {
     }
 
     async fn shutdown(&self, request: ShutdownRequest) -> ShutdownResponse {
-        self.client
-            .post(self.url("/shutdown"))
+        self.authorized(self.client.post(self.url("/shutdown")))
             .json(&request)
             .send()
             .await
@@ -174,9 +179,60 @@ async fn the_state_dir_and_its_files_are_private_to_the_owner() {
     let daemon = Daemon::start(&[]).await;
     let dir = daemon.state_dir.path();
     assert_eq!(mode(dir), 0o700, "an open state dir is restricted");
-    for file in ["sbtd.pid", "sbtd.addr"] {
+    for file in ["sbtd.pid", "sbtd.addr", "sbtd.token"] {
         assert_eq!(mode(&dir.join(file)), 0o600, "{file}");
     }
+}
+
+#[tokio::test]
+async fn every_route_but_health_requires_the_bearer_token() {
+    let daemon = Daemon::start(&[]).await;
+    let root = build_root();
+    let exec = || {
+        daemon.client.post(daemon.url("/exec")).json(&ExecRequest {
+            cwd: root.path().to_path_buf(),
+            command_line: "compile".to_owned(),
+            verbose: false,
+        })
+    };
+    let shutdown = || {
+        daemon
+            .client
+            .post(daemon.url("/shutdown"))
+            .json(&ShutdownRequest::All)
+    };
+    let wrong = BearerToken::generate().unwrap().authorization_value();
+    let refused = [
+        daemon.client.get(daemon.url("/status")),
+        exec(),
+        shutdown(),
+        daemon
+            .client
+            .get(daemon.url("/status"))
+            .header("authorization", &wrong),
+        exec().header("authorization", &wrong),
+        shutdown().header("authorization", &wrong),
+        exec().header("authorization", format!("Basic {}", daemon.token.as_str())),
+    ];
+    for request in refused {
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), 401);
+        assert_eq!(
+            response.headers()["www-authenticate"].to_str().unwrap(),
+            "Bearer realm=\"sbtd\""
+        );
+        let error: ErrorResponse = response.json().await.unwrap();
+        assert_eq!(error.code, ErrorCode::Unauthorized);
+        assert!(error.message.contains("sbtd.token"), "{}", error.message);
+    }
+    assert!(daemon.status().await.instances.is_empty(), "nothing ran");
+    let health = daemon
+        .client
+        .get(daemon.url("/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status(), 200, "/health stays open");
 }
 
 #[tokio::test]
@@ -311,8 +367,9 @@ async fn sigterm_stops_every_instance_and_removes_the_state_files() {
     let status = daemon.child.wait().unwrap();
     assert!(status.success(), "{status}");
     assert!(!pid_alive(pid));
-    assert!(!daemon.state_dir.path().join("sbtd.pid").exists());
-    assert!(!daemon.state_dir.path().join("sbtd.addr").exists());
+    for file in ["sbtd.pid", "sbtd.addr", "sbtd.token"] {
+        assert!(!daemon.state_dir.path().join(file).exists(), "{file}");
+    }
     assert!(daemon.health().await.is_none());
 }
 
@@ -381,8 +438,7 @@ async fn concurrent_execs_on_one_build_root_are_serialized() {
 async fn a_malformed_body_gets_sbtds_own_error_shape() {
     let daemon = Daemon::start(&[]).await;
     let response = daemon
-        .client
-        .post(daemon.url("/exec"))
+        .authorized(daemon.client.post(daemon.url("/exec")))
         .header("content-type", "application/json")
         .body(r#"{"cwd":"/tmp"}"#)
         .send()

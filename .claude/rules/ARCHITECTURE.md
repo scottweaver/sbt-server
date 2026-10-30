@@ -36,9 +36,26 @@ section.
   strictly `sbtd`↔`sbt`, never exposed to the agent.
 - **Invariant any redesign must preserve: agents only ever speak loopback
   HTTP to `sbtd`.**
-- **No auth on `sbtd`'s HTTP API beyond binding strictly to loopback and
-  the Host/Origin check below.** Accepted for a localhost dev tool;
-  bearer-token auth is issue #26, a design dialog.
+- **Every route but `GET /health` requires a bearer token** (decided
+  2026-10-30, issue #26; the design dialog settled three points: `/health`
+  stays open, one token per daemon start, file only). Loopback plus the
+  Host/Origin check keep browsers and other machines out but admit every
+  local user, and sbt runs arbitrary code. `sbtd` draws 32 random bytes at
+  start (`core/src/auth.rs`, `BearerToken`: 64 hex digits, redacted
+  `Debug`, constant-time `matches`), writes them to `sbtd.token` (0600) in
+  the 0700 state dir before `sbtd.addr`, and removes the file on exit, so
+  `daemon restart` is the rotation. `crates/daemon/src/guard.rs`'s second
+  layer (`require_bearer_token`, under `/status`, `/exec` and `/shutdown`
+  only, inside the loopback layer so a foreign Host still gets 403 first)
+  answers a missing or wrong `Authorization: Bearer` with 401
+  `unauthorized` and `WWW-Authenticate: Bearer realm="sbtd"`. `sbtctl`
+  reads the file from its state dir when it exists and sends the header on
+  every request; without the file it proceeds, which keeps `daemon
+  start|status|stop` working, and a 401 comes with a hint naming
+  `--state-dir`. `/health` stays open because it grants nothing (pid,
+  version, uptime) and keeps a wrong state dir distinguishable from a dead
+  daemon. No environment-variable override: the state dir is the single
+  trust anchor, and a token never appears in a command line.
 - **Every request must name a loopback host and carry no Origin** (decided
   2026-10-30, issue #18). Loopback binding alone does not keep browsers
   out: with DNS rebinding a page on `attacker.example`, re-resolved to
@@ -240,9 +257,9 @@ crates/
   removes them on exit.
 - **The state dir is private to its owner.** `StateDir::ensure` creates it
   0700 and restricts an existing looser one (refusing a non-directory in
-  the way); `StateDir::open` creates `sbtd.pid`, `sbtd.addr` and
-  `sbtd.log` 0600 and restricts existing ones, because the log collects
-  every build's raw output. sbtd and `sbtctl daemon start` go through
+  the way); `StateDir::open` creates `sbtd.pid`, `sbtd.addr`, `sbtd.token`
+  and `sbtd.log` 0600 and restricts existing ones, because the log collects
+  every build's raw output and the token is the API credential. sbtd and `sbtctl daemon start` go through
   these two functions and nothing else.
 - **The daemon-action path is `async fn` end to end** (gotcha 7). Never
   spin up a second Tokio runtime with `Runtime::new().block_on(...)` from
@@ -332,8 +349,9 @@ Written down in the rebuild as the contract the hand-off's `/exec`,
 | `POST /shutdown` | `{ target: "one", cwd }` or `{ target: "all" }` | `{ stopped: [build_root] }` |
 
 Errors are JSON `{ code, message, output? }`: `no_build_root` and
-`bad_request` are 400, `forbidden` is 403 (a missing or non-loopback `Host`,
-or any `Origin` header; see Agent transport), `project_load_failed` and
+`bad_request` are 400, `unauthorized` is 401 (no or wrong bearer token on
+any route but `/health`), `forbidden` is 403 (a missing or non-loopback
+`Host`, or any `Origin` header; see Agent transport), `project_load_failed` and
 `start_failed` are 500; `output` carries the captured boot lines when the
 project failed to load.
 
@@ -362,7 +380,7 @@ guarantee.
   own flags must precede it: `-C <dir>` overrides cwd instead of using
   `$PWD`; `--daemon-url` (`SBTCTL_DAEMON_URL`, default
   `http://127.0.0.1:8077`) picks the daemon; `--state-dir`
-  (`SBTD_STATE_DIR`) its pid and log directory; `--verbose` keeps sbt's
+  (`SBTD_STATE_DIR`) its pid, token and log directory; `--verbose` keeps sbt's
   debug-level lines.
 - **Rendering mirrors sbt's own shell**: `log` events print as
   `[info]`/`[warn]`/`[error]` lines on stdout, raw and forwarded output
@@ -483,8 +501,9 @@ guarantee.
   `SBT_SERVER_LIVE=1`.
 - **Idle reaping exists** (see Instance lifecycle); its interval is fixed
   at one minute and only the timeout is configurable.
-- **No auth** on the HTTP API beyond loopback binding and the Host/Origin
-  check (#26 would add a bearer token).
+- **Auth is the per-start bearer token** (#26, landed 2026-10-30) on top
+  of loopback binding and the Host/Origin check; `/health` is open by
+  decision.
 - **Platforms: macOS is supported; Linux builds and passes CI and will be
   supported eventually; Windows is out of scope for good** (decided
   2026-10-29). Signals via `nix`, process groups and Unix sockets for
@@ -518,7 +537,7 @@ Files whose changes warrant re-checking this doc during wrap-up:
 Structural (this doc must change in the same PR): any transport other than
 loopback HTTP between `sbtctl` and `sbtd`, or anything that exposes sbt's
 socket or JSON-RPC to agents; adding auth to the HTTP API or changing the
-Host/Origin admission rule; a change to the
+Host/Origin or bearer-token admission rules; a change to the
 takeover-on-start rule or the bounded-shutdown rule; a change to which
 output channels are captured or to the synthesized completion-line format;
 adopting a different sbt protocol (BSP, LSP) or framing; a change to

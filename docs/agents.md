@@ -49,7 +49,8 @@ job.
 
 ## Writing your own tool
 
-Skip the CLI and call the daemon: `POST /exec` returns an NDJSON stream
+Skip the CLI and call the daemon: `POST /exec` (with the bearer token from
+`sbtd.token` in the state dir, see the HTTP API) returns an NDJSON stream
 with a typed event per line, including structured compiler diagnostics
 with 1-based file positions, which is friendlier to parse than terminal
 output. See the [HTTP API](http-api.md). Watch for exactly one terminal

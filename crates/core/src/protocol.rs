@@ -92,6 +92,7 @@ pub enum ErrorCode {
     StartFailed,
     BadRequest,
     Forbidden,
+    Unauthorized,
     Internal,
 }
 

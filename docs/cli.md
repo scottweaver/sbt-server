@@ -20,7 +20,7 @@ after the first sbt word belongs to sbt.
 |---|---|---|---|
 | `-C`, `--directory <DIR>` | | current directory | Run as if started in `DIR`. The project is the nearest ancestor holding `build.sbt` or `project/build.properties`. |
 | `--daemon-url <URL>` | `SBTCTL_DAEMON_URL` | `http://127.0.0.1:8077` | Where sbtd listens. `daemon start` derives sbtd's `--bind` from it. |
-| `--state-dir <DIR>` | `SBTD_STATE_DIR` | `$XDG_CONFIG_HOME/sbt-server`, else `~/.config/sbt-server` | Where sbtd keeps `sbtd.pid`, `sbtd.addr` and `sbtd.log`. |
+| `--state-dir <DIR>` | `SBTD_STATE_DIR` | `$XDG_CONFIG_HOME/sbt-server`, else `~/.config/sbt-server` | Where sbtd keeps `sbtd.pid`, `sbtd.addr`, `sbtd.token` and `sbtd.log`; sbtctl reads the bearer token from here, so it must be the directory sbtd runs with. |
 | `--verbose` | | off | Also show sbt's debug-level log lines (the "Processing sbt/exec" chatter). |
 | `-V`, `--version` | | | Print the version. |
 
@@ -93,7 +93,7 @@ daemon or a second one on another port.
 | `--idle-timeout-secs <N>` | `SBTD_IDLE_TIMEOUT_SECS` | `7200` | Shut down instances idle this long; `0` keeps them warm forever. A running instance is never reaped. |
 | `--sbt-program <PATH>` | `SBTD_SBT_PROGRAM` | `sbt` | The sbt launcher to spawn. |
 | `--boot-timeout-secs <N>` | `SBTD_BOOT_TIMEOUT_SECS` | `180` | How long a fresh sbt may take to publish its server before the start is abandoned. Raise it for large builds on slow machines. |
-| `--state-dir <DIR>` | `SBTD_STATE_DIR` | XDG config dir | Where the pid and address files live. |
+| `--state-dir <DIR>` | `SBTD_STATE_DIR` | XDG config dir | Where the pid, address and token files live. |
 
 Logging uses `RUST_LOG` (`tracing` syntax): `RUST_LOG=debug` for daemon
 decisions, `RUST_LOG=sbt_server_core=trace` to see every JSON-RPC frame

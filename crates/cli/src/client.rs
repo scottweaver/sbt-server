@@ -1,5 +1,6 @@
 //! HTTP client for sbtd's contract (`sbt_server_core::protocol`).
 
+use sbt_server_core::auth::BearerToken;
 use sbt_server_core::protocol::{
     ErrorCode, ErrorResponse, ExecEvent, ExecRequest, HealthResponse, ShutdownRequest,
     ShutdownResponse, StatusResponse,
@@ -52,6 +53,9 @@ impl ClientError {
                 ErrorCode::Forbidden => Some(
                     "sbtd answers only when addressed as 127.0.0.1, [::1] or localhost; check `--daemon-url` (or SBTCTL_DAEMON_URL)",
                 ),
+                ErrorCode::Unauthorized => Some(
+                    "sbtd did not accept the token from sbtd.token in the state dir (or none was found); point `--state-dir` (SBTD_STATE_DIR) at the directory sbtd runs with, or `sbtctl daemon restart`",
+                ),
                 ErrorCode::StartFailed | ErrorCode::BadRequest | ErrorCode::Internal => None,
             },
             Self::NotSbtd { .. } | Self::Protocol(_) => Some(
@@ -64,6 +68,7 @@ impl ClientError {
 pub struct DaemonClient {
     base: String,
     http: reqwest::Client,
+    token: Option<BearerToken>,
 }
 
 impl DaemonClient {
@@ -72,7 +77,16 @@ impl DaemonClient {
         Self {
             base: base_url.trim_end_matches('/').to_owned(),
             http: reqwest::Client::new(),
+            token: None,
         }
+    }
+
+    /// Send `token` as `Authorization: Bearer` on every request. Without
+    /// one, only `/health` and the daemon lifecycle verbs can succeed.
+    #[must_use]
+    pub fn with_token(mut self, token: BearerToken) -> Self {
+        self.token = Some(token);
+        self
     }
 
     #[must_use]
@@ -161,6 +175,12 @@ impl DaemonClient {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, ClientError> {
+        let request = match &self.token {
+            Some(token) => {
+                request.header(reqwest::header::AUTHORIZATION, token.authorization_value())
+            }
+            None => request,
+        };
         let response = request
             .send()
             .await

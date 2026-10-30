@@ -150,11 +150,18 @@ async fn shutdown(
     })
 }
 
+/// A state dir of this test run's own, so sbtctl never reads the token of
+/// a daemon that happens to be running for the developer.
+fn isolated_state_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().unwrap()).path()
+}
+
 fn sbtctl(url: &str) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sbtctl"));
     command
         .env("SBTCTL_DAEMON_URL", url)
-        .env_remove("SBTD_STATE_DIR");
+        .env("SBTD_STATE_DIR", isolated_state_dir());
     command
 }
 
@@ -180,7 +187,7 @@ fn sbtd_path() -> PathBuf {
 struct RealSbtd {
     child: Child,
     port: u16,
-    _state_dir: tempfile::TempDir,
+    state_dir: tempfile::TempDir,
 }
 
 impl RealSbtd {
@@ -208,7 +215,7 @@ impl RealSbtd {
         Self {
             child,
             port: addr.port(),
-            _state_dir: state_dir,
+            state_dir,
         }
     }
 }
@@ -379,7 +386,7 @@ async fn daemon_start_status_stop_drive_the_real_sbtd() {
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(stdout.starts_with("sbtd started (pid "), "{stdout}");
     assert_eq!(mode(&state_dir), 0o700);
-    for file in ["sbtd.pid", "sbtd.addr", "sbtd.log"] {
+    for file in ["sbtd.pid", "sbtd.addr", "sbtd.token", "sbtd.log"] {
         assert_eq!(mode(&state_dir.join(file)), 0o600, "{file}");
     }
 
@@ -461,13 +468,35 @@ async fn a_server_that_is_not_sbtd_is_named_as_such() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_state_dir_without_the_daemons_token_is_refused_with_a_hint() {
+    let sbtd = RealSbtd::start();
+    let url = format!("http://127.0.0.1:{}", sbtd.port);
+    let (output, _, stderr) = run(sbtctl(&url).arg("status"));
+    assert_eq!(output.status.code(), Some(125), "{stderr}");
+    assert!(stderr.contains("401"), "{stderr}");
+    assert!(stderr.contains("sbtd.token"), "{stderr}");
+    assert!(stderr.contains("--state-dir"), "{stderr}");
+    let (output, stdout, stderr) = run(sbtctl(&url).args(["daemon", "status"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(
+        stdout.starts_with("sbtd running: pid "),
+        "/health needs no token: {stdout}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_localhost_daemon_url_is_served_by_the_real_sbtd() {
     let sbtd = RealSbtd::start();
     let url = format!("http://localhost:{}", sbtd.port);
-    let (output, stdout, stderr) = run(sbtctl(&url).arg("status"));
+    let ctl = || {
+        let mut command = sbtctl(&url);
+        command.arg("--state-dir").arg(sbtd.state_dir.path());
+        command
+    };
+    let (output, stdout, stderr) = run(ctl().arg("status"));
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert_eq!(stdout, "no warm sbt instances\n");
-    let (output, stdout, stderr) = run(sbtctl(&url).args(["daemon", "status"]));
+    let (output, stdout, stderr) = run(ctl().args(["daemon", "status"]));
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(stdout.starts_with("sbtd running: pid "), "{stdout}");
 }

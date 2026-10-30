@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
+use sbt_server_core::auth::{BearerToken, TokenError};
 use sbt_server_core::paths::{PathsError, StateDir};
 use sbt_server_core::protocol::{ExecRequest, InstancePhase, ShutdownRequest, StatusResponse};
 use thiserror::Error;
@@ -30,6 +31,18 @@ enum CliError {
     Cwd(io::Error),
     #[error(transparent)]
     Paths(#[from] PathsError),
+    #[error("cannot read the bearer token {}: {source}", path.display())]
+    TokenFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} does not hold a token sbtd wrote: {source}", path.display())]
+    TokenInvalid {
+        path: PathBuf,
+        #[source]
+        source: TokenError,
+    },
     #[error(
         "`{0}` is not an sbtctl command; to {0} the daemon run `sbtctl daemon {0}`. \
          If your build really has an sbt command called `{0}`, run `sbtctl -- {0}`."
@@ -44,9 +57,12 @@ impl CliError {
     fn exit_code(&self) -> u8 {
         match self {
             Self::DaemonVerb(_) => USAGE_ERROR,
-            Self::Client(_) | Self::Daemon(_) | Self::Cwd(_) | Self::Paths(_) => {
-                render::TOOL_FAILURE
-            }
+            Self::Client(_)
+            | Self::Daemon(_)
+            | Self::Cwd(_)
+            | Self::Paths(_)
+            | Self::TokenFile { .. }
+            | Self::TokenInvalid { .. } => render::TOOL_FAILURE,
         }
     }
 }
@@ -85,7 +101,14 @@ pub fn run() -> ExitCode {
 async fn entry() -> ExitCode {
     let cli = Cli::parse();
     let escaped = std::env::args_os().any(|arg| arg == "--");
-    let client = DaemonClient::new(&cli.daemon_url);
+    let client = match bearer_token(&cli) {
+        Ok(Some(token)) => DaemonClient::new(&cli.daemon_url).with_token(token),
+        Ok(None) => DaemonClient::new(&cli.daemon_url),
+        Err(error) => {
+            report(&error);
+            return ExitCode::from(error.exit_code());
+        }
+    };
     match dispatch(cli, &client, escaped).await {
         Ok(code) => code,
         Err(error) => {
@@ -99,9 +122,12 @@ fn report(error: &CliError) {
     eprintln!("sbtctl: {error}");
     let client_error = match error {
         CliError::Client(inner) | CliError::Daemon(DaemonCtlError::Client(inner)) => Some(inner),
-        CliError::Daemon(_) | CliError::Cwd(_) | CliError::Paths(_) | CliError::DaemonVerb(_) => {
-            None
-        }
+        CliError::Daemon(_)
+        | CliError::Cwd(_)
+        | CliError::Paths(_)
+        | CliError::TokenFile { .. }
+        | CliError::TokenInvalid { .. }
+        | CliError::DaemonVerb(_) => None,
     };
     if let Some(inner) = client_error {
         for line in inner.details() {
@@ -177,6 +203,20 @@ fn cwd(cli: &Cli) -> Result<PathBuf, CliError> {
     match &cli.directory {
         Some(directory) => Ok(directory.clone()),
         None => std::env::current_dir().map_err(CliError::Cwd),
+    }
+}
+
+/// The token `sbtd` left in the state dir, or `None` when there is no
+/// `sbtd.token` there: the daemon is not running, or runs under another
+/// state dir, and the request will say which.
+fn bearer_token(cli: &Cli) -> Result<Option<BearerToken>, CliError> {
+    let path = state_dir(cli)?.token_file();
+    match std::fs::read_to_string(&path) {
+        Ok(text) => BearerToken::parse(&text)
+            .map(Some)
+            .map_err(|source| CliError::TokenInvalid { path, source }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(CliError::TokenFile { path, source }),
     }
 }
 
