@@ -68,3 +68,7 @@ event per request, `done` or `aborted`, and take the exit code from `done`.
   `[success] ...`/`[error] ...` line with the exit code and elapsed time.
 - `sbtctl` never needs the agent to manage the daemon beyond the one-time
   start; `sbtctl shutdown --all` frees memory when a session is over.
+- Authentication is invisible to the agent: `sbtctl` reads the daemon's
+  token from the state directory. The one way to get it wrong is to start
+  the daemon with one `--state-dir` and call `sbtctl` with another; the
+  error then says so and names the flag.

@@ -161,11 +161,20 @@ Bug reports, the PR process and the test policy are in
 `HANDOFF.md` is the frozen development hand-off this rebuild started from.
 Work follows the rules under `.claude/rules/`.
 
+## Stability
+
+sbt-server is 1.0. The [HTTP API](docs/http-api.md) (routes, `/exec` event
+shapes, error codes) and the [`sbtctl` command line](docs/cli.md) (flags,
+exit codes) change only with a new major version. A minor release may add
+routes, event types, fields and flags; it never removes or reinterprets
+one. [CHANGELOG.md](CHANGELOG.md) records every change per release.
+
 ## Platforms
 
-macOS (Apple silicon and Intel) is supported. Linux x86_64 archives ship
-and the suite passes on Linux; it is not yet a supported platform. Windows
-is out of scope.
+macOS (Apple silicon and Intel) is supported; both archives have been run
+by hand. Linux x86_64 archives ship, the suite passes on Linux and the
+archive has been run in a container, but Linux is not a supported platform
+until it has a real user. Windows is out of scope.
 
 ## License
 

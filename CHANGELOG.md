@@ -7,6 +7,16 @@ until 1.0.0 the HTTP and CLI contracts may still change in a minor release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-30
+
+The contract freeze. From this release the HTTP API (its four routes, the
+`/exec` event shapes and the error codes) and the `sbtctl` command line
+(its flags and exit codes) change only with a new major version; a minor
+release may add routes, event types, fields and flags, never remove or
+reinterpret one. One change since 0.1.2 is breaking, and only for tools
+that call the HTTP API directly: the bearer token below. `sbtctl` users
+change nothing.
+
 ### Security
 
 - Every HTTP route but `GET /health` now requires a bearer token. `sbtd`
@@ -15,7 +25,24 @@ until 1.0.0 the HTTP and CLI contracts may still change in a minor release.
   own, so agent call sites do not change. Tools that call the API directly
   must send `Authorization: Bearer <token>`; a missing or wrong token
   answers `401 unauthorized`. This keeps other local users on a shared
-  machine from running sbt as you (#26).
+  machine from running sbt as you. (#26)
+- The dependency tree is checked on every change against the RustSec
+  advisory database, a license allowlist, wildcard versions and unknown
+  sources with cargo-deny. (#23)
+
+### Fixed
+
+- `sbtctl daemon start` with a `localhost` daemon URL
+  (`--daemon-url http://localhost:<port>`) now starts the daemon; it used to
+  hand `localhost` to `sbtd --bind`, which takes an IP literal, and report
+  that the daemon never became healthy. (#64)
+
+### Verified
+
+- The Intel macOS archive runs under Rosetta and the Linux x86_64 archive
+  runs in an Ubuntu 24.04 container (daemon start, status and stop, with
+  the token); until this release only the Apple silicon build had been run
+  by hand. Linux remains unsupported until it has a real user.
 
 ## [0.1.2] - 2026-10-30
 
@@ -119,7 +146,8 @@ The first release.
   a `curl | sh` installer and archives for Apple Silicon, Intel macOS and
   x86_64 Linux, under the Apache-2.0 license. (#5)
 
-[Unreleased]: https://github.com/scottweaver/sbt-server/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/scottweaver/sbt-server/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/scottweaver/sbt-server/compare/v0.1.2...v1.0.0
 [0.1.2]: https://github.com/scottweaver/sbt-server/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/scottweaver/sbt-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/scottweaver/sbt-server/releases/tag/v0.1.0
