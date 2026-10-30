@@ -474,6 +474,16 @@ guarantee.
   `curl`, the installer script or Homebrew carry no quarantine flag, so
   Gatekeeper never prompts. Revisit only if a sponsor pays or Apple waives
   the fee for open-source developers.
+- **Release notes must not contain anything the Actions runner masks**
+  (learned 2026-10-30 on the first `v1.0.0` tag). cargo-dist's `plan` job
+  passes the CHANGELOG section for the release through a step output, and
+  the runner drops any output in which it masked a secret-shaped value;
+  the literal `Authorization: Bearer <token>` was enough. With the output
+  gone, every build job's `if` evaluated false and was skipped, while
+  `host` (which re-plans on its own) published a release with only
+  `dist-manifest.json`. Keep header examples in the docs, not in
+  CHANGELOG.md, and check the plan job for "Skip output" if a release
+  ever comes up empty.
 - **`release.yml` is generated and never hand-edited.** `dist plan` fails in
   CI on any drift from `dist-workspace.toml`, so the GitHub-owned actions it
   uses (`actions/checkout`, `actions/upload-artifact`,
