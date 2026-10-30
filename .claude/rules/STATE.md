@@ -57,39 +57,40 @@ closed as not planned: no paid Apple membership, so no code signing.
 files, all verified locally; the unsigned v0.1.0 and v0.1.1 releases were
 deleted (tags kept), so v0.1.2 is the only release. The rubric all of it
 amounts to is `.claude/rules/REPO_HARDENING.md`, installed from the global
-rules layer. Open: #23 (cargo-deny) and #26 (bearer-token design dialog). The next milestone is
-`v1.0.0`, cut once the Scorecard is at a reasonable grade; 1.0 freezes
-the HTTP contract and the CLI surface.
+rules layer. #23 (cargo-deny, PR #60) and #26 (bearer-token auth, PR #62)
+landed on 2026-10-30; no issue is open. Every route but `/health` now
+requires the token `sbtd` mints at start (`sbtd.token` in the state dir),
+which `sbtctl` reads on its own; this is the one contract change since
+v0.1.2. The next milestone is `v1.0.0`, cut once the Scorecard is at a
+reasonable grade; 1.0 freezes the HTTP contract and the CLI surface.
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `2913205` (#58 merged); `v0.1.2` is the only release |
-| `docs/state-signed-releases` | this refresh | docs carve-out PR |
+| `main` | trunk | at `f136e9f` (#62 merged); `v0.1.2` is the only release |
+| `docs/state-auth-landed` | this refresh | docs carve-out PR |
 
 ## Next up
 
-1. **The road to v1.0.0.** Scorecard is 6.3 on `2913205`; the review of
-   2026-10-30 fixed the ceilings: Signed-Releases is 8 (one signed
-   release, scanned ten seconds before its six `.intoto.jsonl` files
-   landed) and should read 10 on the next push to `main`; SAST is 7 and climbs by itself to 10 once all of the last
-   30 merged PRs carry a CodeQL check run (about 27 more merges; #48
-   never counts); Pinned-Dependencies stays 7 (cargo-dist's three
-   `curl | sh` lines, no knob); Branch-Protection is 3 and can reach 4
-   with `strict_required_status_checks_policy` on ruleset 26239811,
-   a decision the user has not made (it forces every PR to merge `main`
-   first); CII-Best-Practices should read 5 on the next run: the project
-   is bestpractices.dev/projects/16104, badge level "passing" since
-   2026-10-30 (100% of the passing criteria, Baseline Level 1 at 100%,
-   tiered 115%), the badge is in the README. Token-Permissions, Code-Review, Contributors
-   and Maintained are structural. A reasonable grade is therefore about
-   7.5. Remaining work before 1.0.0:
-   #23 (cargo-deny) in its own session, then add its check name to
-   ruleset 26239811, which requires `check (ubuntu-latest)`,
-   `check (macos-latest)` and `analyze (rust)`; decide #26 (bearer-token
-   auth, structural) because 1.0 freezes the agent-facing contract, as
-   do the `localhost` daemon-URL bug and the unrendered diagnostics below.
+1. **The road to v1.0.0.** Scorecard is 6.6 on `6129c46` (before #62):
+   Signed-Releases 10, CII-Best-Practices 5 (bestpractices.dev/projects/
+   16104, "passing" since 2026-10-30, Baseline Level 1 at 100%), SAST 7
+   climbing by itself to 10 once all of the last 30 merged PRs carry a
+   CodeQL check run (about 25 more merges; #48 never counts),
+   Pinned-Dependencies 7 (cargo-dist's three `curl | sh` lines, no knob),
+   Branch-Protection 3 (the user chose not to turn on strict up-to-date
+   checks for the 4th point); Token-Permissions, Code-Review,
+   Contributors and Maintained are structural. The hardening is done;
+   what remains before 1.0.0 is the freeze itself: fix or document the
+   `localhost` daemon-URL bug and the unrendered diagnostics (below), try
+   the Intel macOS and Linux archives by hand (only Apple Silicon has
+   ever been run), write the 1.0.0 CHANGELOG section (the bearer token
+   is the one breaking change since 0.1.2: direct API callers must send
+   `Authorization: Bearer`) and a stability statement in the README, pass
+   over `docs/agents.md`, then bump and tag. Coverage policy: Codecov's
+   project status fails below 90% (`codecov.yml`, decided 2026-10-30);
+   `main` is at 90.5%.
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
@@ -109,6 +110,21 @@ the HTTP contract and the CLI surface.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — #26 bearer-token auth landed (PR #62); #23 cargo-deny
+  (PR #60) and the Best Practices badge (PR #61) landed; no open
+  issues.** Why: loopback plus Host/Origin admitted every local user,
+  and 1.0 freezes the contract, so the auth decision had to come first.
+  The design dialog settled: `/health` open, a new token per daemon start
+  (`sbtd.token`, 0600, removed on exit), file only, no env override.
+  `sbtctl` reads it from the state dir, so agents change nothing; direct
+  API callers add one header. The ruleset now also requires the `deny`
+  check. Codecov's project status gets a hard 90% floor (`codecov.yml`)
+  after it went red on a 0.2-point dip. Lessons: a reusable-workflow job
+  cannot hold more permissions than its caller grants, which is why
+  signing could not live inside cargo-dist's run; the badge site's
+  proposal URLs refuse about 8 KB. Risk: the smoke script and the
+  integration tests cover the token path, but no one has run the
+  released binaries with it yet; v1.0.0 will.
 - **2026-10-30 — v0.1.2 released with provenance and Sigstore bundles;
   #51, #52 landed (PRs #51, #53); #27 closed; Scorecard re-reviewed.**
   Why: the release proves #25, and Signed-Releases needs assets, not the
@@ -220,18 +236,6 @@ the HTTP contract and the CLI surface.
   `/opt/homebrew/bin`, and `sbtctl test` on a real munit project ran
   through it. Risk: only macOS arm64 was exercised by hand; the x86_64
   macOS and Linux archives are built and checksummed but untried.
-- **2026-10-29 — Release pipeline landed (issue #5, PR #8, merged at
-  `abf46d4`, CI green on both platforms with the release plan job
-  passing).** Apache-2.0 chosen as the single license
-  (the permissive one companies accept most readily). cargo-dist releases
-  per package and cannot bundle binaries across packages, so the daemon
-  and CLI became library crates and a new `crates/sbt-server` package ships
-  both binaries; the binary-spawning integration tests moved with them.
-  `dist plan` shows one app with both binaries for the three targets, a
-  shell installer and a Homebrew formula. The tap repository
-  `scottweaver/homebrew-tap` exists. Risk: the `HOMEBREW_TAP_TOKEN`
-  secret is still missing and nothing has been tagged, so the release
-  path is unexercised in CI.
 
 ## Blocked / waiting
 
@@ -241,16 +245,15 @@ the HTTP contract and the CLI surface.
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** merge PR #60 (cargo-deny, #23) and add its check
-  `deny` to ruleset 26239811. Read the Scorecard after the next push to
-  `main` (CII-Best-Practices should be 5, overall about 7). The badge
-  form was filled through the site's proposal URLs
-  (`/projects/16104/choose/edit?<field>_status=Met&...`), which refuse
-  URLs over about 8 KB, so a section goes in two or three submissions. Then #23 in its own session from `main`, and add its
-  check to ruleset 26239811. Decide whether to turn on strict up-to-date
-  checks (Branch-Protection 3 to 4) and whether to enable "automatically
-  delete head branches" on the repo.
-- Ruleset `protect main` (id 26239811) is active since 2026-10-30; docs
+- **Resume here:** the hardening workstream is closed. Next is the
+  1.0.0 freeze list in Next up, each item a small PR from `main`: file
+  the `localhost` daemon-URL bug and fix it, decide and document the
+  diagnostics rendering, run the Intel macOS and Linux v0.1.2 archives
+  by hand, write the 1.0.0 CHANGELOG section and README stability note,
+  then bump to 1.0.0 and tag. Read the Scorecard after this PR's push
+  (expected about 6.6; SAST climbs with each merge).
+- Ruleset `protect main` (id 26239811) requires `check (ubuntu-latest)`,
+  `check (macos-latest)`, `analyze (rust)` and `deny`; docs
   carve-out PRs merge with `gh pr merge --auto --squash --delete-branch`,
   but the remote branch survives (see below).
 - Merged branches still on the remote: `ci/codeql`, `ci/scorecard`,
