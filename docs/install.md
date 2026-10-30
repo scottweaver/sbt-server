@@ -67,6 +67,14 @@ below names `refs/heads/main` rather than the tag. It needs only
 cosign verify-blob --bundle sbt-server-aarch64-apple-darwin.tar.xz.sigstore.json --certificate-identity https://github.com/scottweaver/sbt-server/.github/workflows/sign.yml@refs/heads/main --certificate-oidc-issuer https://token.actions.githubusercontent.com sbt-server-aarch64-apple-darwin.tar.xz
 ```
 
+The same workflow exports the build provenance beside each archive and
+checksum as `<asset>.intoto.jsonl`, the SLSA statement from the attestation
+above in a file, so it can be verified offline:
+
+```bash
+gh attestation verify sbt-server-aarch64-apple-darwin.tar.xz --bundle sbt-server-aarch64-apple-darwin.tar.xz.intoto.jsonl --repo scottweaver/sbt-server
+```
+
 Each release page also carries a CycloneDX SBOM, `sbt-server.cdx.xml`, for
 security intake forms. The attestation covers the archives and their
 checksums; the Sigstore bundles cover every asset, the installer script and
