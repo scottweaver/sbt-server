@@ -30,6 +30,39 @@ enum CliError {
     Cwd(io::Error),
     #[error(transparent)]
     Paths(#[from] PathsError),
+    #[error(
+        "`{0}` is not an sbtctl command; to {0} the daemon run `sbtctl daemon {0}`. \
+         If your build really has an sbt command called `{0}`, run `sbtctl -- {0}`."
+    )]
+    DaemonVerb(String),
+}
+
+/// The exit code for a usage mistake, as clap uses for its own.
+const USAGE_ERROR: u8 = 2;
+
+impl CliError {
+    fn exit_code(&self) -> u8 {
+        match self {
+            Self::DaemonVerb(_) => USAGE_ERROR,
+            Self::Client(_) | Self::Daemon(_) | Self::Cwd(_) | Self::Paths(_) => {
+                render::TOOL_FAILURE
+            }
+        }
+    }
+}
+
+/// `sbtctl start` almost always means `sbtctl daemon start`. A bare daemon
+/// verb as the whole sbt command line is refused unless the caller wrote
+/// `--` before it, which is the one way to say "send it to sbt anyway".
+fn forgotten_daemon_verb(words: &[OsString], escaped: bool) -> Option<String> {
+    if escaped {
+        return None;
+    }
+    let [word] = words else {
+        return None;
+    };
+    let word = word.to_str()?;
+    matches!(word, "start" | "stop" | "restart").then(|| word.to_owned())
 }
 
 /// Run sbtctl to completion on its own Tokio runtime; the result is the
@@ -51,12 +84,13 @@ pub fn run() -> ExitCode {
 
 async fn entry() -> ExitCode {
     let cli = Cli::parse();
+    let escaped = std::env::args_os().any(|arg| arg == "--");
     let client = DaemonClient::new(&cli.daemon_url);
-    match dispatch(cli, &client).await {
+    match dispatch(cli, &client, escaped).await {
         Ok(code) => code,
         Err(error) => {
             report(&error);
-            ExitCode::from(render::TOOL_FAILURE)
+            ExitCode::from(error.exit_code())
         }
     }
 }
@@ -65,7 +99,9 @@ fn report(error: &CliError) {
     eprintln!("sbtctl: {error}");
     let client_error = match error {
         CliError::Client(inner) | CliError::Daemon(DaemonCtlError::Client(inner)) => Some(inner),
-        CliError::Daemon(_) | CliError::Cwd(_) | CliError::Paths(_) => None,
+        CliError::Daemon(_) | CliError::Cwd(_) | CliError::Paths(_) | CliError::DaemonVerb(_) => {
+            None
+        }
     };
     if let Some(inner) = client_error {
         for line in inner.details() {
@@ -77,9 +113,14 @@ fn report(error: &CliError) {
     }
 }
 
-async fn dispatch(cli: Cli, client: &DaemonClient) -> Result<ExitCode, CliError> {
+async fn dispatch(cli: Cli, client: &DaemonClient, escaped: bool) -> Result<ExitCode, CliError> {
     match cli.command {
-        Command::Sbt(ref words) => exec(client, cwd(&cli)?, words, cli.verbose).await,
+        Command::Sbt(ref words) => {
+            if let Some(verb) = forgotten_daemon_verb(words, escaped) {
+                return Err(CliError::DaemonVerb(verb));
+            }
+            exec(client, cwd(&cli)?, words, cli.verbose).await
+        }
         Command::Status => {
             print_status(&client.status().await?);
             Ok(ExitCode::SUCCESS)
@@ -235,5 +276,30 @@ async fn daemon(
                 Ok(ExitCode::from(1))
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(items: &[&str]) -> Vec<OsString> {
+        items.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn a_bare_daemon_verb_is_caught_unless_escaped() {
+        assert_eq!(
+            forgotten_daemon_verb(&words(&["start"]), false).as_deref(),
+            Some("start")
+        );
+        assert_eq!(
+            forgotten_daemon_verb(&words(&["restart"]), false).as_deref(),
+            Some("restart")
+        );
+        assert_eq!(forgotten_daemon_verb(&words(&["start"]), true), None);
+        assert_eq!(forgotten_daemon_verb(&words(&["start", "x"]), false), None);
+        assert_eq!(forgotten_daemon_verb(&words(&["compile"]), false), None);
+        assert_eq!(CliError::DaemonVerb("stop".into()).exit_code(), USAGE_ERROR);
     }
 }

@@ -18,6 +18,12 @@ pub enum ClientError {
     },
     #[error("sbtd answered {status}: {}", body.message)]
     Api { status: u16, body: ErrorResponse },
+    #[error("the server at {url} answered {status} but does not speak sbtd's protocol: {excerpt}")]
+    NotSbtd {
+        url: String,
+        status: u16,
+        excerpt: String,
+    },
     #[error("sbtd sent something that is not its protocol: {0}")]
     Protocol(String),
 }
@@ -28,7 +34,7 @@ impl ClientError {
     pub fn details(&self) -> &[String] {
         match self {
             Self::Api { body, .. } => body.output.as_deref().unwrap_or(&[]),
-            Self::Unreachable { .. } | Self::Protocol(_) => &[],
+            Self::Unreachable { .. } | Self::NotSbtd { .. } | Self::Protocol(_) => &[],
         }
     }
 
@@ -36,7 +42,18 @@ impl ClientError {
     pub fn hint(&self) -> Option<&'static str> {
         match self {
             Self::Unreachable { .. } => Some("start it with `sbtctl daemon start`"),
-            Self::Api { .. } | Self::Protocol(_) => None,
+            Self::Api { body, .. } => match body.code {
+                ErrorCode::NoBuildRoot => {
+                    Some("run this inside an sbt project, or pass `-C <dir>`")
+                }
+                ErrorCode::ProjectLoadFailed => {
+                    Some("fix what the lines above report, then run the command again")
+                }
+                ErrorCode::StartFailed | ErrorCode::BadRequest | ErrorCode::Internal => None,
+            },
+            Self::NotSbtd { .. } | Self::Protocol(_) => Some(
+                "check `--daemon-url` (or SBTCTL_DAEMON_URL); something other than sbtd may be listening there",
+            ),
         }
     }
 }
@@ -150,19 +167,31 @@ impl DaemonClient {
             return Ok(response);
         }
         let text = response.text().await.unwrap_or_default();
-        let body = match serde_json::from_str(&text) {
-            Ok(body) => body,
-            Err(_) => ErrorResponse {
-                code: ErrorCode::Internal,
-                message: text,
-                output: None,
-            },
-        };
-        Err(ClientError::Api {
-            status: status.as_u16(),
-            body,
-        })
+        match serde_json::from_str::<ErrorResponse>(&text) {
+            Ok(body) => Err(ClientError::Api {
+                status: status.as_u16(),
+                body,
+            }),
+            Err(_) => Err(ClientError::NotSbtd {
+                url: self.base.clone(),
+                status: status.as_u16(),
+                excerpt: excerpt(&text),
+            }),
+        }
     }
+}
+
+/// The first line of a body, cut to one screen width, for an error message.
+fn excerpt(text: &str) -> String {
+    let line = text.lines().next().unwrap_or("").trim();
+    if line.is_empty() {
+        return "(empty body)".to_owned();
+    }
+    let mut cut: String = line.chars().take(120).collect();
+    if cut.len() < line.len() {
+        cut.push_str("...");
+    }
+    cut
 }
 
 async fn decode<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, ClientError> {
