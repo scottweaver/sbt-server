@@ -6,6 +6,14 @@ full trace of the daemon's conversation with sbt, run a daemon by hand with
 `RUST_LOG=sbt_server_core=trace sbtd --bind 127.0.0.1:8099` and point
 `sbtctl --daemon-url http://127.0.0.1:8099` at it.
 
+## `` `start` is not an sbtctl command ``
+
+You typed `sbtctl start` (or `stop`, `restart`) and meant the daemon:
+`sbtctl daemon start`. sbtctl refuses the bare word rather than sending
+it to sbt, which would only answer "Not a valid command". If your build
+really defines an sbt command called `start`, `sbtctl -- start` sends it
+through.
+
 ## `cannot reach sbtd at http://127.0.0.1:8077`
 
 No daemon is listening there. `sbtctl daemon start`. If you started the
@@ -70,9 +78,11 @@ project. Restart them afterwards and they will start their own again.
 - **Test framework lines** (`MySuite:`, `+ test passed`) require sbt-server
   0.1.0 or later; earlier builds never attached to sbt's channel and lost
   them.
-- **`Not a valid command: foo`**: sbt prints that only to its own console,
-  never to a network client. You get the synthesized
-  `[error] 'foo' failed (exit code 1)` line instead.
+- **`Not a valid command: foo`**: sbt's own parse errors arrive as
+  `[error]` lines, followed by the synthesized
+  `[error] 'foo' failed (exit code 1)`. Check the spelling against
+  `sbt tasks`, and remember that sbtctl's own flags must come before the
+  sbt words.
 - **Output printed while the project loads** (a plugin's warning on boot)
   belongs to no command; it is in `sbtd.log` and in the
   `project_load_failed` error if the load failed.

@@ -35,6 +35,11 @@ a bounded `shutdown` request to sbt followed by a kill if it does not
 exit. `--all` stops every instance. Stopping a project that has no warm
 instance is not an error.
 
+A bare `start`, `stop` or `restart` as the whole command line is refused
+with a pointer at `sbtctl daemon <verb>`, since that is almost always what
+was meant; `sbtctl -- start` sends the word to sbt for a build that really
+defines such a command.
+
 **`daemon start`** spawns `sbtd` detached in its own process group, with
 stdout and stderr appended to `sbtd.log`, and waits up to five seconds for
 `/health` to answer. It looks for `sbtd` next to its own executable, then
@@ -74,6 +79,7 @@ one as an `[error]` or `[warn]` line. The structured form is on the
 | `0` | sbt ran the command and it succeeded. |
 | `1` to `124` | sbt ran the command and it failed; this is sbt's exit code, clamped to that range. A compile error or a failed test is `1`. |
 | `125` | The tool failed, not the build: sbtd unreachable, the request refused (no build root, project failed to load), the exec aborted (sbt died, daemon shutting down), or a protocol error. The message on stderr says which, and `sbtd.log` has the rest. |
+| `2` | A usage mistake, such as `sbtctl start` without `daemon`; the message says what to run instead. |
 | `1` from `daemon status` | sbtd is not running. |
 
 ## `sbtd`
