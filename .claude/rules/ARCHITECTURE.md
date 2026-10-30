@@ -429,6 +429,23 @@ guarantee.
   `gh attestation verify <archive> --owner scottweaver` proves it came from
   this repository's release workflow at the tagged commit. The installer
   script and the SBOM are not attested.
+- **Every release asset carries a Sigstore signature as a sibling asset**
+  (decided 2026-10-30, issue #52). `.github/workflows/sign.yml` runs on
+  `workflow_run` of the Release workflow (a `release:` trigger never fires
+  for a release created with `GITHUB_TOKEN`, and cargo-dist's custom jobs
+  grant `id-token: write` without `contents: write` or the reverse, so the
+  signing cannot live inside the release run), downloads the assets, signs
+  each keyless with `cosign sign-blob --bundle` and uploads
+  `<asset>.sigstore.json` next to it. Verification pins the certificate
+  identity to this repository's `sign.yml` at a `v*` tag and the GitHub
+  OIDC issuer (`docs/install.md`). Scorecard's Signed-Releases check reads
+  these; it does not read the attestations API.
+- **No code signing or notarization** (decided 2026-10-30, issue #27): it
+  needs a paid Apple Developer Program membership. Sigstore and the
+  attestations are the provenance; command-line binaries installed by
+  `curl`, the installer script or Homebrew carry no quarantine flag, so
+  Gatekeeper never prompts. Revisit only if a sponsor pays or Apple waives
+  the fee for open-source developers.
 - **`release.yml` is generated and never hand-edited.** `dist plan` fails in
   CI on any drift from `dist-workspace.toml`, so the GitHub-owned actions it
   uses (`actions/checkout`, `actions/upload-artifact`,

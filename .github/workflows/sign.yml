@@ -1,0 +1,41 @@
+name: Sign
+
+# Runs after the Release workflow because cargo-dist creates the release with
+# GITHUB_TOKEN, and events raised with that token never start a `release:`
+# workflow. Keyless Sigstore signatures, one bundle beside every asset.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - name: Download the release assets
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir assets
+      - name: Sign every asset, keyless
+        working-directory: assets
+        run: |
+          for asset in *; do
+            case "$asset" in *.sigstore.json) continue ;; esac
+            cosign sign-blob --yes --bundle "$asset.sigstore.json" "$asset"
+          done
+      - name: Upload the bundles as release assets
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/*.sigstore.json

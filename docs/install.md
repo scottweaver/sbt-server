@@ -57,9 +57,20 @@ without the source tree, by `cargo-audit` installed with its
 cargo audit bin $(which sbtctl) $(which sbtd)
 ```
 
+Every asset also has a Sigstore signature beside it, `<asset>.sigstore.json`,
+made keyless by the repository's `sign.yml` workflow right after the release
+is published. It needs only [cosign](https://github.com/sigstore/cosign):
+
+```bash
+cosign verify-blob --bundle sbt-server-aarch64-apple-darwin.tar.xz.sigstore.json --certificate-identity-regexp '^https://github.com/scottweaver/sbt-server/\.github/workflows/sign\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com sbt-server-aarch64-apple-darwin.tar.xz
+```
+
 Each release page also carries a CycloneDX SBOM, `sbt-server.cdx.xml`, for
 security intake forms. The attestation covers the archives and their
-checksums; the installer script and the SBOM are not attested.
+checksums; the Sigstore bundles cover every asset, the installer script and
+the SBOM included. The binaries are not code-signed or notarized: that needs
+a paid Apple developer membership, and the installer, Homebrew and `curl`
+paths set no quarantine flag, so Gatekeeper does not prompt.
 
 ## From source
 
