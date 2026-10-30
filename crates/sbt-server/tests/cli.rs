@@ -500,6 +500,27 @@ async fn a_corrupt_token_file_is_reported_before_any_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn daemon_start_accepts_a_localhost_daemon_url() {
+    let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let url = format!("http://localhost:{}", free.local_addr().unwrap().port());
+    drop(free);
+    let tmp = tempfile::tempdir().unwrap();
+    let ctl = || {
+        let mut command = sbtctl(&url);
+        command.arg("--state-dir").arg(tmp.path());
+        command
+    };
+    let (output, stdout, stderr) = run(ctl().args(["daemon", "start"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stdout.starts_with("sbtd started (pid "), "{stdout}");
+    let (output, stdout, stderr) = run(ctl().arg("status"));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(stdout, "no warm sbt instances\n");
+    let (output, _, stderr) = run(ctl().args(["daemon", "stop"]));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_localhost_daemon_url_is_served_by_the_real_sbtd() {
     let sbtd = RealSbtd::start();
     let url = format!("http://localhost:{}", sbtd.port);
