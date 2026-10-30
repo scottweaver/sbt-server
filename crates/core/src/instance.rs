@@ -26,7 +26,9 @@ use tokio::sync::{Mutex, Notify, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
-pub use self::descriptor::{ConnectionInfo, DescriptorError, ServerUri, Token};
+pub use self::descriptor::{
+    ConnectionInfo, DescriptorError, LoopbackSocket, SbtUserDir, SbtUserDirError, ServerUri, Token,
+};
 pub use self::output::{DeathCause, Phase};
 use self::output::{ExecEnd, Input, Router};
 pub use self::session::{
@@ -131,10 +133,28 @@ impl Default for Timeouts {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+/// How to start and reach sbt. `sbt_dir` is the only place a token file
+/// named by `active.json` may come from.
+#[derive(Debug, Clone)]
 pub struct SbtConfig {
     pub launcher: Launcher,
     pub timeouts: Timeouts,
+    pub sbt_dir: SbtUserDir,
+}
+
+impl SbtConfig {
+    /// Default launcher and timeouts, with `sbt_dir` from `HOME`.
+    ///
+    /// # Errors
+    ///
+    /// `HOME` is unset or unusable.
+    pub fn from_env() -> Result<Self, SbtUserDirError> {
+        Ok(Self {
+            launcher: Launcher::default(),
+            timeouts: Timeouts::default(),
+            sbt_dir: SbtUserDir::from_env()?,
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -167,6 +187,10 @@ pub enum StartError {
     Handshake(#[from] HandshakeError),
     #[error("sbt handshake timed out after {waited:?}")]
     HandshakeTimeout { waited: Duration },
+    /// The fresh child never writes such a descriptor, so something else
+    /// is writing into its `project/target`.
+    #[error("refusing the server descriptor sbt was expected to publish: {0}")]
+    UntrustedDescriptor(#[source] DescriptorError),
     #[error("the sbt start task ended without reporting an outcome")]
     Vanished,
 }
@@ -182,6 +206,7 @@ impl StartError {
             | Self::ConnectTimeout { .. }
             | Self::Handshake(_)
             | Self::HandshakeTimeout { .. }
+            | Self::UntrustedDescriptor(_)
             | Self::Vanished => &[],
         }
     }
@@ -257,7 +282,7 @@ impl Instance {
     /// (with its captured output), or a connection/handshake failure. The
     /// child is killed on every error path.
     pub async fn start(config: &SbtConfig, root: BuildRoot) -> Result<Self, StartError> {
-        take_over_existing_server(&root, &config.timeouts).await;
+        take_over_existing_server(&root, config).await;
         let mut child = spawn(&config.launcher, &root)?;
         let pid = Pid(child.id().unwrap_or_default());
         let (inputs, inbox) = mpsc::channel(INPUT_QUEUE);
@@ -281,7 +306,7 @@ impl Instance {
             root: &root,
             inputs: &inputs,
             phase: &phase,
-            timeouts: &config.timeouts,
+            config,
         };
         let info = boot.wait_for_descriptor().await?;
         let session = boot.connect_and_initialize(&info).await?;
@@ -481,13 +506,14 @@ struct Boot<'a> {
     root: &'a BuildRoot,
     inputs: &'a mpsc::Sender<Input>,
     phase: &'a watch::Receiver<Phase>,
-    timeouts: &'a Timeouts,
+    config: &'a SbtConfig,
 }
 
 impl Boot<'_> {
     async fn wait_for_descriptor(&self) -> Result<ConnectionInfo, StartError> {
         let path = self.root.active_json();
-        let deadline = Instant::now() + self.timeouts.boot;
+        let timeouts = &self.config.timeouts;
+        let deadline = Instant::now() + timeouts.boot;
         loop {
             let died = self.phase.borrow().death_cause().cloned();
             if let Some(cause) = died {
@@ -496,14 +522,17 @@ impl Boot<'_> {
                     output: self.boot_output().await,
                 });
             }
-            match descriptor::read(&path).await {
+            match descriptor::read(&path, &self.config.sbt_dir).await {
                 Ok(info) => return Ok(info),
+                Err(error) if error.is_refusal() => {
+                    return Err(StartError::UntrustedDescriptor(error));
+                }
                 Err(error) if error.is_not_found() => {}
                 Err(error) => tracing::debug!(%error, "descriptor not readable yet"),
             }
             if Instant::now() >= deadline {
                 return Err(StartError::BootTimeout {
-                    waited: self.timeouts.boot,
+                    waited: timeouts.boot,
                     output: self.boot_output().await,
                 });
             }
@@ -523,11 +552,12 @@ impl Boot<'_> {
         &self,
         info: &ConnectionInfo,
     ) -> Result<SbtSession, StartError> {
-        let io = timeout(self.timeouts.connect, connect(&info.uri))
+        let timeouts = &self.config.timeouts;
+        let io = timeout(timeouts.connect, connect(&info.uri))
             .await
             .map_err(|_| StartError::ConnectTimeout {
                 uri: info.uri.clone(),
-                waited: self.timeouts.connect,
+                waited: timeouts.connect,
             })?
             .map_err(|source| StartError::Connect {
                 uri: info.uri.clone(),
@@ -535,10 +565,10 @@ impl Boot<'_> {
             })?;
         let connection = Connection::open(io, self.inputs.clone(), terminal::answer);
         let handshake = Unauthenticated::new(connection).initialize(info.token.as_ref());
-        timeout(self.timeouts.handshake, handshake)
+        timeout(timeouts.handshake, handshake)
             .await
             .map_err(|_| StartError::HandshakeTimeout {
-                waited: self.timeouts.handshake,
+                waited: timeouts.handshake,
             })?
             .map_err(StartError::Handshake)
     }
@@ -546,7 +576,7 @@ impl Boot<'_> {
 
 async fn connect(uri: &ServerUri) -> io::Result<BoxedIo> {
     match uri {
-        ServerUri::Tcp(addr) => jsonrpc::connect_tcp(*addr).await,
+        ServerUri::Tcp(addr) => jsonrpc::connect_tcp(addr.socket_addr()).await,
         ServerUri::Local(path) => jsonrpc::connect_unix(path).await,
     }
 }
@@ -554,14 +584,16 @@ async fn connect(uri: &ServerUri) -> io::Result<BoxedIo> {
 /// Gotcha 3: never trust a pre-existing `active.json`. Ask whatever it
 /// describes to shut down (bounded), delete it, wait for the endpoint to
 /// stop listening so its exit hook cannot delete the replacement's
-/// descriptor, then let the caller spawn fresh.
-async fn take_over_existing_server(root: &BuildRoot, timeouts: &Timeouts) {
+/// descriptor, then let the caller spawn fresh. A descriptor that is
+/// unreadable or refused is deleted without connecting to anything.
+async fn take_over_existing_server(root: &BuildRoot, config: &SbtConfig) {
+    let timeouts = &config.timeouts;
     let path = root.active_json();
-    let info = match descriptor::read(&path).await {
+    let info = match descriptor::read(&path, &config.sbt_dir).await {
         Ok(info) => info,
         Err(error) if error.is_not_found() => return,
         Err(error) => {
-            tracing::warn!(%root, %error, "removing an unreadable server descriptor");
+            tracing::warn!(%root, %error, "removing an unusable server descriptor");
             drop(tokio::fs::remove_file(&path).await);
             return;
         }

@@ -1,15 +1,19 @@
 //! `Instance` against the fake sbt binary as a real child process.
 
 use std::ffi::OsString;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use fake_sbt::{
     BOOT_DELAY_MS_ENV, BOOT_FAIL_ENV, FakeSbtServer, Options, PRINT_ON_EXEC_ENV, SCENARIO_ENV,
-    Scenario, ShutdownBehaviour, TOKEN_ENV, TRANSPORT_ENV, Transport,
+    Scenario, ShutdownBehaviour, TOKEN_DIR_ENV, TOKEN_ENV, TRANSPORT_ENV, Transport,
 };
 use sbt_server_core::instance::{
-    CommandLine, Instance, Launcher, Phase, SbtConfig, ShutdownRpc, StartError, Timeouts,
+    CommandLine, DescriptorError, Instance, Launcher, Phase, SbtConfig, SbtUserDir, ShutdownRpc,
+    StartError, Timeouts,
 };
 use sbt_server_core::protocol::{AbortReason, ExecEvent, LogLevel, Outcome, OutputStream};
 use sbt_server_core::routing::{BuildRoot, resolve_build_root};
@@ -31,7 +35,45 @@ fn config(env: &[(&str, &str)]) -> SbtConfig {
             takeover: Duration::from_secs(2),
             shutdown: Duration::from_millis(500),
         },
+        sbt_dir: SbtUserDir::resolve(Some("/nonexistent-home".into())).unwrap(),
     }
+}
+
+/// Counts every connection made to it; nothing is ever answered.
+struct Tripwire {
+    port: u16,
+    connections: Arc<AtomicUsize>,
+}
+
+impl Tripwire {
+    /// Listens on every interface, so connecting to the unspecified
+    /// `0.0.0.0` would reach it: a refused descriptor naming that address
+    /// proves the refusal, not an unroutable host, kept the count at zero.
+    async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&connections);
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                drop(socket);
+            }
+        });
+        Self { port, connections }
+    }
+
+    fn connections(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
+    }
+}
+
+fn plant_descriptor(dir: &Path, descriptor: &serde_json::Value) {
+    let target = dir.join("project").join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("active.json"), descriptor.to_string()).unwrap();
 }
 
 fn build_root() -> (tempfile::TempDir, BuildRoot) {
@@ -390,14 +432,74 @@ async fn unix_socket_and_token_transports_are_supported() {
     instance.shutdown().await;
     assert!(!socket.exists());
 
-    let (_dir, root) = build_root();
-    let instance = Instance::start(
-        &config(&[(TOKEN_ENV, "84046191245433876643612047032303751629")]),
-        root,
-    )
-    .await
-    .unwrap();
+    let (dir, root) = build_root();
+    let token_dir = dir.path().join(".sbt/1.0/server/0845deda85cb41abdb9f");
+    let token_dir = token_dir.to_str().unwrap();
+    let mut cfg = config(&[
+        (TOKEN_ENV, "84046191245433876643612047032303751629"),
+        (TOKEN_DIR_ENV, token_dir),
+    ]);
+    cfg.sbt_dir = SbtUserDir::resolve(Some(dir.path().into())).unwrap();
+    let instance = Instance::start(&cfg, root).await.unwrap();
     terminal(&instance.exec(command("compile"), false).collect().await);
     instance.shutdown().await;
     drop(Transport::Tcp);
+}
+
+#[tokio::test]
+async fn takeover_refuses_a_non_loopback_descriptor_without_connecting() {
+    let tripwire = Tripwire::start().await;
+    let (dir, root) = build_root();
+    let planted = format!("tcp://0.0.0.0:{}", tripwire.port);
+    plant_descriptor(dir.path(), &serde_json::json!({ "uri": planted }));
+
+    let instance = Instance::start(&config(&[]), root).await.unwrap();
+    assert_eq!(tripwire.connections(), 0);
+    let descriptor = std::fs::read_to_string(instance.root().active_json()).unwrap();
+    assert!(!descriptor.contains(&planted), "{descriptor}");
+    terminal(&instance.exec(command("compile"), false).collect().await);
+    instance.shutdown().await;
+}
+
+#[tokio::test]
+async fn takeover_refuses_a_token_file_outside_the_sbt_dir_without_connecting() {
+    let tripwire = Tripwire::start().await;
+    let (dir, root) = build_root();
+    let secret = dir.path().join("secret.json");
+    std::fs::write(&secret, r#"{"token":"not-for-you"}"#).unwrap();
+    let planted = format!("tcp://127.0.0.1:{}", tripwire.port);
+    plant_descriptor(
+        dir.path(),
+        &serde_json::json!({ "uri": planted, "tokenfilePath": secret }),
+    );
+
+    let instance = Instance::start(&config(&[]), root).await.unwrap();
+    assert_eq!(tripwire.connections(), 0);
+    let descriptor = std::fs::read_to_string(instance.root().active_json()).unwrap();
+    assert!(!descriptor.contains(&planted), "{descriptor}");
+    instance.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_refused_descriptor_during_boot_is_a_start_error() {
+    let tripwire = Tripwire::start().await;
+    let (dir, root) = build_root();
+    let cfg = config(&[(BOOT_DELAY_MS_ENV, "3000")]);
+    let start = tokio::spawn(async move { Instance::start(&cfg, root).await });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    plant_descriptor(
+        dir.path(),
+        &serde_json::json!({ "uri": format!("tcp://0.0.0.0:{}", tripwire.port) }),
+    );
+
+    let error = start.await.unwrap().unwrap_err();
+    assert!(
+        matches!(
+            error,
+            StartError::UntrustedDescriptor(DescriptorError::NonLoopbackHost { .. })
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("loopback"), "{error}");
+    assert_eq!(tripwire.connections(), 0);
 }

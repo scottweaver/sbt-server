@@ -54,7 +54,7 @@ async fn serve() -> anyhow::Result<()> {
     let sigterm = signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?;
     write_state_files(&state_dir, addr).await?;
 
-    let registry = Registry::new(cli.registry_config());
+    let registry = Registry::new(cli.registry_config()?);
     let reaper = registry.spawn_reaper(REAPER_INTERVAL);
     let state = Arc::new(AppState {
         registry: Arc::clone(&registry),

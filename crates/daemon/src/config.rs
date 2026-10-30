@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use clap::Parser;
-use sbt_server_core::instance::{Launcher, SbtConfig, Timeouts};
+use sbt_server_core::instance::{Launcher, SbtConfig, SbtUserDir, SbtUserDirError, Timeouts};
 use sbt_server_core::paths::{PathsError, StateDir};
 use sbt_server_core::registry::RegistryConfig;
 use thiserror::Error;
@@ -83,9 +83,11 @@ pub struct Cli {
 }
 
 impl Cli {
-    #[must_use]
-    pub fn registry_config(&self) -> RegistryConfig {
-        RegistryConfig {
+    /// # Errors
+    ///
+    /// `HOME` is unset or unusable, so `~/.sbt` cannot be located.
+    pub fn registry_config(&self) -> Result<RegistryConfig, SbtUserDirError> {
+        Ok(RegistryConfig {
             sbt: SbtConfig {
                 launcher: Launcher {
                     program: self.sbt_program.clone(),
@@ -95,10 +97,11 @@ impl Cli {
                     boot: Duration::from_secs(self.boot_timeout_secs),
                     ..Timeouts::default()
                 },
+                sbt_dir: SbtUserDir::from_env()?,
             },
             idle_timeout: (self.idle_timeout_secs > 0)
                 .then(|| Duration::from_secs(self.idle_timeout_secs)),
-        }
+        })
     }
 
     /// # Errors
@@ -137,10 +140,10 @@ mod tests {
     #[test]
     fn zero_idle_timeout_disables_the_reaper() {
         let cli = Cli::parse_from(["sbtd", "--idle-timeout-secs", "0"]);
-        assert_eq!(cli.registry_config().idle_timeout, None);
+        assert_eq!(cli.registry_config().unwrap().idle_timeout, None);
         let cli = Cli::parse_from(["sbtd"]);
         assert_eq!(
-            cli.registry_config().idle_timeout,
+            cli.registry_config().unwrap().idle_timeout,
             Some(Duration::from_hours(2))
         );
         assert_eq!(cli.bind.to_string(), "127.0.0.1:8077");

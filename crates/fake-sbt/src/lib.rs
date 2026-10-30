@@ -33,6 +33,9 @@ const ATTACH_QUERY: &str =
 pub const SCENARIO_ENV: &str = "FAKE_SBT_SCENARIO";
 pub const TRANSPORT_ENV: &str = "FAKE_SBT_TRANSPORT";
 pub const TOKEN_ENV: &str = "FAKE_SBT_TOKEN";
+/// Where the token file goes, as sbt puts it under `~/.sbt/1.0/server/`;
+/// defaults to the build's `project/target`.
+pub const TOKEN_DIR_ENV: &str = "FAKE_SBT_TOKEN_DIR";
 pub const BOOT_DELAY_MS_ENV: &str = "FAKE_SBT_BOOT_DELAY_MS";
 pub const BOOT_FAIL_ENV: &str = "FAKE_SBT_BOOT_FAIL";
 /// When set, the process prints `fake-sbt: exec <command>` to its own stdout
@@ -168,6 +171,7 @@ pub enum Transport {
 pub struct Options {
     pub transport: Transport,
     pub token: Option<String>,
+    pub token_dir: Option<PathBuf>,
     pub scenario: Scenario,
     /// Print a line to the process stdout before answering each exec.
     pub print_on_exec: bool,
@@ -178,6 +182,7 @@ impl Default for Options {
         Self {
             transport: Transport::Tcp,
             token: None,
+            token_dir: None,
             scenario: Scenario::default(),
             print_on_exec: false,
         }
@@ -185,8 +190,8 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Read [`SCENARIO_ENV`], [`TRANSPORT_ENV`] (`tcp` or `local:<path>`) and
-    /// [`TOKEN_ENV`]; anything unset keeps its default.
+    /// Read [`SCENARIO_ENV`], [`TRANSPORT_ENV`] (`tcp` or `local:<path>`),
+    /// [`TOKEN_ENV`] and [`TOKEN_DIR_ENV`]; anything unset keeps its default.
     ///
     /// # Errors
     ///
@@ -211,6 +216,7 @@ impl Options {
         Ok(Self {
             transport,
             token: std::env::var(TOKEN_ENV).ok(),
+            token_dir: std::env::var_os(TOKEN_DIR_ENV).map(PathBuf::from),
             scenario,
             print_on_exec: std::env::var_os(PRINT_ON_EXEC_ENV).is_some(),
         })
@@ -322,9 +328,11 @@ impl FakeSbtServer {
         tokio::fs::create_dir_all(&target).await?;
         let (listener, endpoint) = bind(&options.transport).await?;
         let active_json = target.join("active.json");
-        let token_file = options.token.as_ref().map(|_| target.join("token.json"));
+        let token_dir = options.token_dir.as_ref().unwrap_or(&target);
+        let token_file = options.token.as_ref().map(|_| token_dir.join("token.json"));
         let descriptor = match (&options.token, &token_file) {
             (Some(token), Some(path)) => {
+                tokio::fs::create_dir_all(token_dir).await?;
                 let token_json = json!({ "uri": endpoint.uri(), "token": token });
                 tokio::fs::write(path, token_json.to_string()).await?;
                 json!({

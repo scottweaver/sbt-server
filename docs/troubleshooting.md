@@ -73,6 +73,12 @@ while agents are working on it, and expect an open `sbt` shell or an
 IDE's background sbt to be stopped the first time `sbtctl` touches that
 project. Restart them afterwards and they will start their own again.
 
+A descriptor that names a TCP address off the loopback interface, or a
+token file outside `~/.sbt`, is never connected to: sbtd logs a warning in
+`sbtd.log`, deletes it and starts its own server. sbt itself never writes
+such a descriptor, so one usually came from a cloned repository or a
+corrupted `project/target`.
+
 ## Output I expected is missing
 
 - **Test framework lines** (`MySuite:`, `+ test passed`) require sbt-server

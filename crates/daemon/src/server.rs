@@ -152,6 +152,7 @@ impl ApiError {
             | StartError::ConnectTimeout { .. }
             | StartError::Handshake(_)
             | StartError::HandshakeTimeout { .. }
+            | StartError::UntrustedDescriptor(_)
             | StartError::Vanished => ErrorCode::StartFailed,
         };
         let output = error.output();

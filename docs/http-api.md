@@ -93,7 +93,7 @@ Any non-2xx response is JSON:
 | 400 | `no_build_root` | `cwd` is not inside an sbt project. |
 | 400 | `bad_request` | `cwd` does not exist, or `command_line` is empty. |
 | 500 | `project_load_failed` | sbt exited or stalled before its server came up. `output` carries the last lines sbt printed, which usually say why. |
-| 500 | `start_failed` | sbt came up but the connection or handshake failed. |
+| 500 | `start_failed` | sbt came up but the connection or handshake failed, or the server descriptor it was waiting for named a non-loopback address or a token file outside `~/.sbt`. |
 
 ## curl
 
