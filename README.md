@@ -1,6 +1,7 @@
 # sbt-server
 
 [![CI](https://github.com/scottweaver/sbt-server/actions/workflows/ci.yml/badge.svg)](https://github.com/scottweaver/sbt-server/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/scottweaver/sbt-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/scottweaver/sbt-server/actions/workflows/codeql.yml)
 [![Release](https://img.shields.io/github/v/release/scottweaver/sbt-server?display_name=tag)](https://github.com/scottweaver/sbt-server/releases/latest)
 [![Coverage](https://codecov.io/gh/scottweaver/sbt-server/branch/main/graph/badge.svg)](https://codecov.io/gh/scottweaver/sbt-server)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
