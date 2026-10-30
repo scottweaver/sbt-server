@@ -393,3 +393,88 @@ async fn a_malformed_body_gets_sbtds_own_error_shape() {
     assert_eq!(error.code, ErrorCode::BadRequest);
     assert!(error.message.contains("command_line"), "{}", error.message);
 }
+
+#[tokio::test]
+async fn a_foreign_host_is_refused_on_every_route_before_anything_runs() {
+    let daemon = Daemon::start(&[]).await;
+    let root = build_root();
+    let exec = serde_json::to_string(&ExecRequest {
+        cwd: root.path().to_path_buf(),
+        command_line: "compile".to_owned(),
+        verbose: false,
+    })
+    .unwrap();
+    let shutdown = serde_json::to_string(&ShutdownRequest::All).unwrap();
+    let requests = [
+        daemon.client.get(daemon.url("/health")),
+        daemon.client.get(daemon.url("/status")),
+        daemon
+            .client
+            .post(daemon.url("/exec"))
+            .header("content-type", "application/json")
+            .body(exec),
+        daemon
+            .client
+            .post(daemon.url("/shutdown"))
+            .header("content-type", "application/json")
+            .body(shutdown),
+    ];
+    for request in requests {
+        let response = request
+            .header("host", "attacker.example:8077")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
+        let error: ErrorResponse = response.json().await.unwrap();
+        assert_eq!(error.code, ErrorCode::Forbidden);
+        assert!(
+            error.message.contains("attacker.example"),
+            "{}",
+            error.message
+        );
+    }
+    assert!(daemon.status().await.instances.is_empty());
+}
+
+#[tokio::test]
+async fn a_request_with_an_origin_is_refused_even_from_loopback() {
+    let daemon = Daemon::start(&[]).await;
+    let same_origin = format!("http://{}", daemon.addr);
+    for origin in ["http://attacker.example", same_origin.as_str(), "null"] {
+        let response = daemon
+            .client
+            .get(daemon.url("/health"))
+            .header("origin", origin)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403, "{origin}");
+        let error: ErrorResponse = response.json().await.unwrap();
+        assert_eq!(error.code, ErrorCode::Forbidden);
+        assert!(error.message.contains("Origin"), "{}", error.message);
+    }
+    assert!(daemon.health().await.is_some());
+}
+
+#[tokio::test]
+async fn every_loopback_host_form_is_served() {
+    let daemon = Daemon::start(&[]).await;
+    let port = daemon.addr.port();
+    for host in [
+        format!("127.0.0.1:{port}"),
+        format!("localhost:{port}"),
+        format!("[::1]:{port}"),
+        "localhost".to_owned(),
+        "127.0.0.1".to_owned(),
+    ] {
+        let response = daemon
+            .client
+            .get(daemon.url("/health"))
+            .header("host", &host)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200, "{host}");
+    }
+}

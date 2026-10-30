@@ -25,6 +25,9 @@ The daemon listens on loopback only and refuses any other bind address,
 but it has no authentication: any process on your machine can ask it to
 run sbt commands in your projects, which is the same trust your shell
 already extends to any local process. Do not run it on a shared host.
+Requests that look like they came from a browser (a `Host` that is not
+loopback, or any `Origin` header) are refused with 403, so a web page
+cannot reach it through DNS rebinding.
 
 **How much memory does it use?**
 Each warm instance is a full sbt JVM, the same one `sbt` would run for that

@@ -3,6 +3,7 @@
 //! never start a second runtime from inside this one (gotcha 7).
 
 mod config;
+mod guard;
 mod server;
 
 use std::io::Write;

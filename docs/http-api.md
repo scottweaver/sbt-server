@@ -4,7 +4,12 @@
 `sbtd`, and anything that can issue loopback HTTP can do the same. The base
 URL is `http://127.0.0.1:8077` unless the daemon was started elsewhere.
 There is no authentication: the daemon binds loopback only and trusts
-everything on this machine.
+everything on this machine. It does refuse what a browser would send: the
+`Host` header must be `127.0.0.1`, `[::1]` or `localhost` (any loopback IP
+literal works), with an optional port, and a request carrying any `Origin`
+header is refused. Both answer `403 forbidden` (see Errors). That closes
+DNS rebinding, where a web page reaches loopback under its own hostname;
+`curl` and `sbtctl` never send either.
 
 | Method and path | Request body | Response |
 |---|---|---|
@@ -92,6 +97,7 @@ Any non-2xx response is JSON:
 |---|---|---|
 | 400 | `no_build_root` | `cwd` is not inside an sbt project. |
 | 400 | `bad_request` | `cwd` does not exist, or `command_line` is empty. |
+| 403 | `forbidden` | `Host` is missing or not loopback, or the request carries an `Origin` header. Browsers send both; `sbtctl` and `curl` never do. |
 | 500 | `project_load_failed` | sbt exited or stalled before its server came up. `output` carries the last lines sbt printed, which usually say why. |
 | 500 | `start_failed` | sbt came up but the connection or handshake failed. |
 
