@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/scottweaver/sbt-server?display_name=tag)](https://github.com/scottweaver/sbt-server/releases/latest)
 [![Coverage](https://codecov.io/gh/scottweaver/sbt-server/branch/main/graph/badge.svg)](https://codecov.io/gh/scottweaver/sbt-server)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/scottweaver/sbt-server/badge)](https://scorecard.dev/viewer/?uri=github.com/scottweaver/sbt-server)
 
 **Keep sbt warm for the agents and people who call it a hundred times a day.**
 
