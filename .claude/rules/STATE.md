@@ -52,11 +52,12 @@ SBOM, GitHub attestations, release.yml pinned through
 vulnerability alerts, security updates, auto-merge; applied by hand) and
 #52 (Sigstore bundles beside every release asset, `sign.yml`). #27 is
 closed as not planned: no paid Apple membership, so no code signing.
-`v0.1.2` shipped on 2026-10-30 with attestations, a CycloneDX SBOM and 13
-`.sigstore.json` bundles, all verified locally. The rubric all of it
+`v0.1.2` shipped on 2026-10-30 with attestations, a CycloneDX SBOM, 13
+`.sigstore.json` bundles and, after #57, six `.intoto.jsonl` provenance
+files, all verified locally; the unsigned v0.1.0 and v0.1.1 releases were
+deleted (tags kept), so v0.1.2 is the only release. The rubric all of it
 amounts to is `.claude/rules/REPO_HARDENING.md`, installed from the global
-rules layer. Open: #23 (cargo-deny), #26 (bearer-token design dialog),
-#54 (CONTRIBUTING.md and CHANGELOG.md, PR #55). The next milestone is
+rules layer. Open: #23 (cargo-deny) and #26 (bearer-token design dialog). The next milestone is
 `v1.0.0`, cut once the Scorecard is at a reasonable grade; 1.0 freezes
 the HTTP contract and the CLI surface.
 
@@ -64,26 +65,25 @@ the HTTP contract and the CLI surface.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `0c64dbf` (#53 merged); `v0.1.2` is the last release |
-| `docs/contributing-changelog` | #54: CONTRIBUTING.md, CHANGELOG.md, README link, smoke.sh package name | PR #55, awaiting CI and merge |
-| `docs/v0.1.2-released` | this refresh, the cosign identity fix, the rubric with ceilings | docs carve-out PR |
+| `main` | trunk | at `2913205` (#58 merged); `v0.1.2` is the only release |
+| `docs/state-signed-releases` | this refresh | docs carve-out PR |
 
 ## Next up
 
-1. **The road to v1.0.0.** Scorecard was 5.8 on `0c64dbf` before the
-   signed release; the review of 2026-10-30 fixed the ceilings:
-   Signed-Releases should flip to 10 on the next run (13 bundles are on
-   `v0.1.2`); SAST is 7 and climbs by itself to 10 once all of the last
+1. **The road to v1.0.0.** Scorecard is 6.3 on `2913205`; the review of
+   2026-10-30 fixed the ceilings: Signed-Releases is 8 (one signed
+   release, scanned ten seconds before its six `.intoto.jsonl` files
+   landed) and should read 10 on the next push to `main`; SAST is 7 and climbs by itself to 10 once all of the last
    30 merged PRs carry a CodeQL check run (about 27 more merges; #48
    never counts); Pinned-Dependencies stays 7 (cargo-dist's three
    `curl | sh` lines, no knob); Branch-Protection is 3 and can reach 4
    with `strict_required_status_checks_policy` on ruleset 26239811,
    a decision the user has not made (it forces every PR to merge `main`
    first); CII-Best-Practices is 0 until the user registers the repo at
-   bestpractices.dev (2 points on registration, 5 at passing; #55 adds
-   the two missing files). Token-Permissions, Code-Review, Contributors
+   bestpractices.dev (2 points on registration, 5 at passing; #55 added
+   CONTRIBUTING.md and CHANGELOG.md). Token-Permissions, Code-Review, Contributors
    and Maintained are structural. A reasonable grade is therefore about
-   7.5. Remaining work before 1.0.0: merge #55 and register the badge;
+   7.5. Remaining work before 1.0.0: register the badge;
    #23 (cargo-deny) in its own session, then add its check name to
    ruleset 26239811, which requires `check (ubuntu-latest)`,
    `check (macos-latest)` and `analyze (rust)`; decide #26 (bearer-token
@@ -123,7 +123,13 @@ the HTTP contract and the CLI surface.
   head branches" would); `brew upgrade` needs `brew update` first to see
   a new formula. Risk: the Dependabot token may not let CodeQL upload,
   leaving SAST gaps; nothing verified the Linux or Intel archives beyond
-  their checksums.
+  their checksums. Later the same day: #57 (PR #58) exports the
+  attestation as `<asset>.intoto.jsonl` beside each archive and checksum
+  (Scorecard scores a signature asset 8 and a provenance asset 10,
+  averaged over the last five releases, and never reads the attestations
+  API), `sign.yml` gained `workflow_dispatch` for an existing tag, and the
+  unsigned v0.1.0 and v0.1.1 releases were deleted at the user's request
+  so the average covers v0.1.2 alone. Score 6.3.
 - **2026-10-30 — #34, #25 and #21 landed (PRs #47, #48; #21 by hand);
   v0.1.2 bump open (PR #49); REPO_HARDENING.md extracted.** Why: the
   three Scorecard gaps that were work rather than structure. CodeQL
@@ -235,10 +241,10 @@ the HTTP contract and the CLI surface.
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** merge PR #55, then register the repo at
-  bestpractices.dev and answer the form (the crypto criteria are N/A).
-  Read the Scorecard after the next push to `main` (Signed-Releases
-  should be 10). Then #23 in its own session from `main`, and add its
+- **Resume here:** register the repo at bestpractices.dev and answer the
+  form (the crypto criteria are N/A; CONTRIBUTING.md and CHANGELOG.md
+  exist). Read the Scorecard after this PR's push to `main`
+  (Signed-Releases should be 10, overall about 6.5). Then #23 in its own session from `main`, and add its
   check to ruleset 26239811. Decide whether to turn on strict up-to-date
   checks (Branch-Protection 3 to 4) and whether to enable "automatically
   delete head branches" on the repo.
@@ -249,7 +255,8 @@ the HTTP contract and the CLI surface.
   `ci/sigstore-release-signing`, `claude/release-provenance-db862a`,
   `dependabot/github_actions/actions/checkout-7.0.1`,
   `docs/security-policy`, `docs/state-hardening`, `fix/macos-15-runner`,
-  `test/fuzz-parsers`. Delete once the user confirms.
+  `test/fuzz-parsers`, plus whatever auto-merge left since. Delete once
+  the user confirms, or turn on "automatically delete head branches".
 - Releasing: `brew update` before `brew upgrade sbt-server`, or the tap
   index still shows the previous version. The release workflow is
   followed by `sign.yml` (about a minute); the bundles are not there
