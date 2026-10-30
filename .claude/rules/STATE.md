@@ -124,7 +124,22 @@ the HTTP contract and the CLI surface.
   a new formula. Risk: the Dependabot token may not let CodeQL upload,
   leaving SAST gaps; nothing verified the Linux or Intel archives beyond
   their checksums.
-- **2026-10-30 — #34, #25 and #21 landed- **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
+- **2026-10-30 — #34, #25 and #21 landed (PRs #47, #48; #21 by hand);
+  v0.1.2 bump open (PR #49); REPO_HARDENING.md extracted.** Why: the
+  three Scorecard gaps that were work rather than structure. CodeQL
+  (advanced setup, `security-and-quality`, build mode none) found nothing
+  on the current tree; #25 turns on cargo-auditable, CycloneDX and GitHub
+  attestations in `dist-workspace.toml` and pins every action in the
+  generated release.yml through `[dist.github-action-commits]`; #21 is
+  ruleset `protect main` plus vulnerability alerts, security updates and
+  auto-merge. The rubric those issues add up to now lives in the global
+  rules layer (`my-dev-environment` PR #32) and is installed here.
+  Lessons: the ruleset requires `analyze (rust)` by name, so a PR branch
+  without `codeql.yml` can never merge; the auto-mode classifier refuses
+  to merge PRs, so merges are the user's. Risk: nothing proves the
+  attestations until `v0.1.2` runs; #47 and #48 merged on green CI
+  without a second reader.
+- **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
   #40 via PR #41); #42 and #43 opened with PRs #44 and #45.** Why: a
   team evaluating the tool reads the badge row first. `coverage.yml` runs
   cargo-llvm-cov on ubuntu with the spawned `sbtd`/`sbtctl`/`fake-sbt`
