@@ -4,11 +4,12 @@
 
 use std::ffi::OsString;
 use std::io;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fake_sbt::{TOKEN_ENV, TRANSPORT_ENV};
-use sbt_server_core::instance::{CommandLine, Instance, Launcher, SbtConfig, Timeouts};
+use fake_sbt::{TOKEN_DIR_ENV, TOKEN_ENV, TRANSPORT_ENV};
+use sbt_server_core::instance::{CommandLine, Instance, Launcher, SbtConfig, SbtUserDir, Timeouts};
 use sbt_server_core::routing::resolve_build_root;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -42,15 +43,20 @@ impl<'a> MakeWriter<'a> for Captured {
     }
 }
 
-fn config() -> SbtConfig {
+fn config(home: &Path) -> SbtConfig {
+    let token_dir = home.join(".sbt/1.0/server/0845deda85cb41abdb9f");
     SbtConfig {
         launcher: Launcher {
             program: fake_sbt::bin_path().unwrap(),
             args: Vec::new(),
-            env: [(TRANSPORT_ENV, "tcp"), (TOKEN_ENV, TOKEN)]
-                .into_iter()
-                .map(|(k, v)| (OsString::from(k), OsString::from(v)))
-                .collect(),
+            env: [
+                (TRANSPORT_ENV, OsString::from("tcp")),
+                (TOKEN_ENV, OsString::from(TOKEN)),
+                (TOKEN_DIR_ENV, token_dir.into_os_string()),
+            ]
+            .into_iter()
+            .map(|(k, v)| (OsString::from(k), v))
+            .collect(),
         },
         timeouts: Timeouts {
             connect: Duration::from_secs(2),
@@ -59,6 +65,7 @@ fn config() -> SbtConfig {
             takeover: Duration::from_secs(2),
             shutdown: Duration::from_millis(500),
         },
+        sbt_dir: SbtUserDir::resolve(Some(home.into())).unwrap(),
     }
 }
 
@@ -75,7 +82,7 @@ async fn the_token_handshake_traced_in_full_never_shows_the_token() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("build.sbt"), "").unwrap();
     let root = resolve_build_root(dir.path()).unwrap();
-    let instance = Instance::start(&config(), root).await.unwrap();
+    let instance = Instance::start(&config(dir.path()), root).await.unwrap();
     drop(
         instance
             .exec(CommandLine::new("compile").unwrap(), false)

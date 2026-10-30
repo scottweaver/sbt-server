@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fake_sbt::{BOOT_FAIL_ENV, SCENARIO_ENV};
-use sbt_server_core::instance::{CommandLine, Launcher, Phase, SbtConfig, StartError, Timeouts};
+use sbt_server_core::instance::{
+    CommandLine, Launcher, Phase, SbtConfig, SbtUserDir, StartError, Timeouts,
+};
 use sbt_server_core::protocol::{ExecEvent, InstancePhase};
 use sbt_server_core::registry::{Registry, RegistryConfig};
 use sbt_server_core::routing::{BuildRoot, resolve_build_root};
@@ -28,6 +30,7 @@ fn registry(env: &[(&str, &str)], idle_timeout: Option<Duration>) -> Arc<Registr
                 takeover: Duration::from_secs(2),
                 shutdown: Duration::from_millis(500),
             },
+            sbt_dir: SbtUserDir::resolve(Some("/nonexistent-home".into())).unwrap(),
         },
         idle_timeout,
     })

@@ -119,7 +119,9 @@ crates/
   socket and the pending-request map, so a reply slot is registered before
   its request is written and every notification is forwarded before any
   later response resolves. `instance/descriptor.rs` parses both
-  `tcp://host:port` and `local:///path` URIs from `active.json`. Request
+  `tcp://host:port` and `local:///path` URIs from `active.json`, and a
+  TCP host must be a loopback IP literal (see "Never trust a pre-existing
+  `active.json`"). Request
   ids are sent as JSON strings because sbt stores and echoes them as
   strings. sbt's source (`CommandExchange.scala`) codes `ConnectionType.Tcp`
   as the default, but on the original development machine sbt actually
@@ -140,9 +142,10 @@ crates/
 - **Token auth is optional, not mandatory** (gotcha 2). Over the default
   Local transport sbt treats the connecting process as already
   authenticated via Unix-socket filesystem permissions and omits
-  `tokenfilePath` from `active.json`. `read_connection_info` and the
-  `initialize` handshake treat the token as `Option<String>` and only
-  read/send one when `tokenfilePath` is present.
+  `tokenfilePath` from `active.json`. `descriptor::read` and the
+  `initialize` handshake treat the token as optional and only read/send
+  one when `tokenfilePath` is present, and only from a path under
+  `$HOME/.sbt/` (where sbt writes it, `~/.sbt/1.0/server/<hash>/`).
 - **The token never reaches a log line.** `Token`'s `Debug` is redacted,
   and the trace line for each outbound frame goes through
   `jsonrpc::message::redact_frame`, which replaces
@@ -173,7 +176,22 @@ crates/
   best-effort bounded `shutdown` exec, delete the descriptor regardless of
   whether that worked, then always spawn a fresh `sbt` process. One-time
   cold-boot cost per daemon restart per build root — correctness over
-  speed. After the bounded shutdown and the delete, `start` waits (bounded
+  speed. **The descriptor is validated before anything is trusted
+  (2026-10-30):** it is parsed into a typed `ActiveJson` only when a TCP
+  endpoint is a loopback address (`127.0.0.0/8`, `::1`, or their IPv4-mapped
+  form; `0.0.0.0` and `::` are refused) and a `tokenfilePath` is an
+  absolute path with no `..` lying strictly under `$HOME/.sbt/` (a lexical
+  check, with the directory passed in as `SbtConfig::sbt_dir`); `local://`
+  socket paths are not restricted. A refusal is a `DescriptorError`
+  (`NonLoopbackHost`, `UntrustedTokenFile`) raised before any socket is
+  opened or token file read, because a cloned repository can ship
+  `project/target/active.json`. During takeover a refused descriptor is
+  handled like a broken one: logged at warn, deleted, spawned over.
+  During the boot wait it is `StartError::UntrustedDescriptor`
+  (`start_failed`), since the fresh child never writes one and something
+  else is writing into that directory. A `sbt.global.base` pointing
+  outside `~/.sbt` would therefore be refused for TCP servers.
+  After the bounded shutdown and the delete, `start` waits (bounded
   by the takeover timeout) until the old endpoint refuses connections
   before spawning: sbt's exit hook deletes `active.json` on the way out
   and would otherwise remove the replacement's descriptor. A server that

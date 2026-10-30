@@ -31,7 +31,7 @@ fn fixture() -> PathBuf {
 }
 
 fn config() -> SbtConfig {
-    let mut config = SbtConfig::default();
+    let mut config = SbtConfig::from_env().unwrap();
     if let Ok(args) = std::env::var("SBT_SERVER_LIVE_ARGS") {
         config.launcher.args = args.split_whitespace().map(OsString::from).collect();
     }
