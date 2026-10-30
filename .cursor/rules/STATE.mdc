@@ -50,19 +50,22 @@ are green.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `66a6c08`, tagged `v0.1.0` and released |
+| `main` | trunk | docs (#11), README (#15) and the forgot-daemon fix (#14) merged after `v0.1.0`; 0.1.1 release in flight |
 
 ## Next up
 
-1. **#6 user docs under `docs/`**, then **#7 README rewrite**, each its own
-   branch and PR. Every change goes issue, branch, push, PR with
-   `Closes #N`, merge, then the post-merge routine. The install command
-   they document is real now: `brew install scottweaver/tap/sbt-server`,
-   or the `sbt-server-installer.sh` attached to each release.
-2. **Releasing again** is: bump the workspace version, merge, push a `v*`
-   tag. The `HOMEBREW_TAP_TOKEN` secret is a fine-grained PAT scoped to
-   the tap with Contents read/write; when it expires only the formula
-   push fails.
+1. **Release 0.1.1**: this bump merges, then `git tag -a v0.1.1 && git
+   push origin v0.1.1`; after the workflow, `brew upgrade sbt-server` and
+   check `sbtctl start` gives the usage error. Releasing is always: bump
+   the workspace version, merge, push a `v*` tag. The `HOMEBREW_TAP_TOKEN`
+   secret is a fine-grained PAT scoped to the tap with Contents
+   read/write; when it expires only the formula push fails.
+2. **Socialising it**: `docs/agents.md` is the page to hand to a team. If
+   an endpoint policy rejects unsigned binaries, code signing and
+   notarization become the next ticket; nothing in the pipeline does them.
+3. **Still open from the hand-off**: auth on sbtd beyond loopback, Linux as
+   a supported platform, sbt 2.x, a launchd recipe for running sbtd at
+   login.
 2. **Open items the hand-off left, still open**: auth on `sbtd` beyond
    loopback; Windows (signals, process groups, named pipes); sbt 2.x
    (only 1.x's protocol has been exercised). Each is a design dialog plus
@@ -73,6 +76,16 @@ are green.
 
 ## Most recent meaningful progress
 
+- **2026-10-29 — Docs, README and the forgot-daemon fix landed** (PRs
+  #11, #15, #14; issues #6, #7, #13). Why: the user's first real-project
+  run surfaced `sbtctl start` as the common slip with feedback that never
+  named the daemon; the fix refuses bare daemon verbs (exit 2) with the
+  right command, adds hints to every error, names non-sbtd answers, and
+  makes sbtd reject bad bodies in its own shape. The docs and README are
+  what other teams will see first. Lesson: GitHub closes a PR whose base
+  branch is deleted, so the stacked README PR (#12) had to be reopened
+  as #15 from `main`; do not stack PRs, or merge the top one first. Risk:
+  Homebrew users on 0.1.0 lack the fix until 0.1.1 ships.
 - **2026-10-29 — v0.1.0 released.** Tag `v0.1.0` on `66a6c08`; the
   release workflow passed every job, the release carries the three
   archives, checksums, `sbt-server-installer.sh` and the formula, and the
