@@ -485,6 +485,21 @@ async fn a_state_dir_without_the_daemons_token_is_refused_with_a_hint() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_corrupt_token_file_is_reported_before_any_request() {
+    let sbtd = RealSbtd::start();
+    let url = format!("http://127.0.0.1:{}", sbtd.port);
+    let state_dir = tempfile::tempdir().unwrap();
+    std::fs::write(state_dir.path().join("sbtd.token"), "not a token\n").unwrap();
+    let (output, _, stderr) = run(sbtctl(&url)
+        .arg("--state-dir")
+        .arg(state_dir.path())
+        .arg("status"));
+    assert_eq!(output.status.code(), Some(125), "{stderr}");
+    assert!(stderr.contains("does not hold a token"), "{stderr}");
+    assert!(stderr.contains("sbtd.token"), "{stderr}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_localhost_daemon_url_is_served_by_the_real_sbtd() {
     let sbtd = RealSbtd::start();
     let url = format!("http://localhost:{}", sbtd.port);

@@ -1,0 +1,12 @@
+# Coverage is a trend to watch, not a merge gate (.claude/rules/REPO_HARDENING.md,
+# section 5): the project status tolerates a one-point dip instead of failing
+# on any decrease, while the patch status still reports what new code left
+# uncovered.
+coverage:
+  status:
+    project:
+      default:
+        threshold: 1%
+    patch:
+      default:
+        informational: true
