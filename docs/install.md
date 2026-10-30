@@ -58,7 +58,7 @@ cause of a puzzling version mismatch.
 
 | Path | What |
 |---|---|
-| `~/.config/sbt-server/` (or `$XDG_CONFIG_HOME/sbt-server/`, or `--state-dir`) | `sbtd.pid`, `sbtd.addr` (the address the daemon bound) and `sbtd.log` (its output when started detached) |
+| `~/.config/sbt-server/` (or `$XDG_CONFIG_HOME/sbt-server/`, or `--state-dir`) | `sbtd.pid`, `sbtd.addr` (the address the daemon bound) and `sbtd.log` (its output when started detached, including raw build output); the directory is created 0700 and the files 0600, and looser modes left by an older version are tightened on start |
 | `<project>/project/target/active.json` | written by sbt itself, as for any sbt server; sbt-server reads and, on takeover, deletes it |
 | `~/.sbt/1.0/server/` | sbt's own socket and token files, untouched by sbt-server |
 

@@ -24,7 +24,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use self::framing::{FrameDecoder, encode_frame};
 pub use self::message::{Incoming, Notification, RequestId, RpcError};
-use self::message::{encode_method_not_found, encode_request, encode_response, parse_incoming};
+use self::message::{
+    encode_method_not_found, encode_request, encode_response, parse_incoming, redact_frame,
+};
 
 /// A bidirectional socket of either transport sbt may publish in
 /// `active.json`.
@@ -207,7 +209,7 @@ impl<N: From<Notification>> Actor<N> {
             reply,
         } = outbound;
         let body = encode_request(id, &method, &params);
-        tracing::trace!(frame = %String::from_utf8_lossy(&body), "-> sbt");
+        tracing::trace!(frame = %redact_frame(&body), "-> sbt");
         self.pending.insert(id, reply);
         self.write(&body).await
     }

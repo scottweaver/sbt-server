@@ -2,7 +2,8 @@
 //! contract, plus one lifecycle test against the real `sbtd` binary.
 
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -357,22 +358,30 @@ async fn status_and_shutdown_speak_the_contract() {
     assert!(stdout.contains("pid 4242"), "{stdout}");
 }
 
+fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn daemon_start_status_stop_drive_the_real_sbtd() {
     let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let url = format!("http://{}", free.local_addr().unwrap());
     drop(free);
-    let state_dir = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("sbt-server");
     let ctl = || {
         let mut command = sbtctl(&url);
-        command.arg("--state-dir").arg(state_dir.path());
+        command.arg("--state-dir").arg(&state_dir);
         command
     };
 
     let (output, stdout, stderr) = run(ctl().args(["daemon", "start"]));
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(stdout.starts_with("sbtd started (pid "), "{stdout}");
-    assert!(state_dir.path().join("sbtd.pid").is_file());
+    assert_eq!(mode(&state_dir), 0o700);
+    for file in ["sbtd.pid", "sbtd.addr", "sbtd.log"] {
+        assert_eq!(mode(&state_dir.join(file)), 0o600, "{file}");
+    }
 
     let (output, _, stderr) = run(ctl().args(["daemon", "start"]));
     assert_eq!(output.status.code(), Some(125));
@@ -393,7 +402,7 @@ async fn daemon_start_status_stop_drive_the_real_sbtd() {
     let (output, stdout, stderr) = run(ctl().args(["daemon", "stop"]));
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(stdout.starts_with("sbtd stopped (pid "), "{stdout}");
-    assert!(!state_dir.path().join("sbtd.pid").exists());
+    assert!(!state_dir.join("sbtd.pid").exists());
 
     let (output, stdout, _) = run(ctl().args(["daemon", "stop"]));
     assert_eq!(output.status.code(), Some(0));
