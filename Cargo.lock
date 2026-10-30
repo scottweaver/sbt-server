@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "fake-sbt"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -775,7 +775,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sbt-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "sbt-server-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "nix",
@@ -807,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "sbt-server-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "fake-sbt",
  "serde",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "sbt-server-daemon"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
