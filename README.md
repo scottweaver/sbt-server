@@ -148,6 +148,10 @@ nightly toolchain and are run by hand, never in CI.
 A release is a tag: bump the workspace version, merge, push `vX.Y.Z`, and
 cargo-dist builds the archives, the installer and the Homebrew formula.
 
+Bug reports, the PR process and the test policy are in
+[CONTRIBUTING.md](CONTRIBUTING.md); what each release changed is in
+[CHANGELOG.md](CHANGELOG.md).
+
 `HANDOFF.md` is the frozen development hand-off this rebuild started from.
 Work follows the rules under `.claude/rules/`.
 

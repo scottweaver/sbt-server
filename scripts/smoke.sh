@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cargo build -q -p sbtd -p sbtctl
+cargo build -q -p sbt-server
 export SBTD_STATE_DIR
 SBTD_STATE_DIR="$(mktemp -d)"
 export SBTCTL_DAEMON_URL="http://127.0.0.1:${SBT_SERVER_SMOKE_PORT:-8099}"
