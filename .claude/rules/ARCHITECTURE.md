@@ -441,7 +441,13 @@ guarantee.
   `.../.github/workflows/sign.yml@refs/heads/main`, never the tag;
   verification pins that identity and the GitHub OIDC issuer
   (`docs/install.md`, proven on v0.1.2). Scorecard's Signed-Releases check reads
-  these; it does not read the attestations API.
+  these; it does not read the attestations API. The same job exports the
+  attestation for each archive and checksum as `<asset>.intoto.jsonl`
+  (the SLSA v1 statement in a Sigstore bundle, verifiable offline with
+  `gh attestation verify --bundle`), and `workflow_dispatch` re-runs it for
+  an existing tag. Scorecard's Signed-Releases scores a release 8 for a
+  signature asset and 10 for a provenance asset, averaged over the last
+  five releases; it never reads the attestations API.
 - **No code signing or notarization** (decided 2026-10-30, issue #27): it
   needs a paid Apple Developer Program membership. Sigstore and the
   attestations are the provenance; command-line binaries installed by
