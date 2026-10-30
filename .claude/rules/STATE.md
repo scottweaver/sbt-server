@@ -79,11 +79,12 @@ the HTTP contract and the CLI surface.
    `curl | sh` lines, no knob); Branch-Protection is 3 and can reach 4
    with `strict_required_status_checks_policy` on ruleset 26239811,
    a decision the user has not made (it forces every PR to merge `main`
-   first); CII-Best-Practices is 0 until the user registers the repo at
-   bestpractices.dev (2 points on registration, 5 at passing; #55 added
-   CONTRIBUTING.md and CHANGELOG.md). Token-Permissions, Code-Review, Contributors
+   first); CII-Best-Practices should read 5 on the next run: the project
+   is bestpractices.dev/projects/16104, badge level "passing" since
+   2026-10-30 (100% of the passing criteria, Baseline Level 1 at 100%,
+   tiered 115%), the badge is in the README. Token-Permissions, Code-Review, Contributors
    and Maintained are structural. A reasonable grade is therefore about
-   7.5. Remaining work before 1.0.0: register the badge;
+   7.5. Remaining work before 1.0.0:
    #23 (cargo-deny) in its own session, then add its check name to
    ruleset 26239811, which requires `check (ubuntu-latest)`,
    `check (macos-latest)` and `analyze (rust)`; decide #26 (bearer-token
@@ -234,17 +235,18 @@ the HTTP contract and the CLI surface.
 
 ## Blocked / waiting
 
-- Registering at bestpractices.dev needs the user's GitHub login; nothing
-  else is blocked.
+- *(nothing)*
 
 ## Session handoff
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** register the repo at bestpractices.dev and answer the
-  form (the crypto criteria are N/A; CONTRIBUTING.md and CHANGELOG.md
-  exist). Read the Scorecard after this PR's push to `main`
-  (Signed-Releases should be 10, overall about 6.5). Then #23 in its own session from `main`, and add its
+- **Resume here:** merge PR #60 (cargo-deny, #23) and add its check
+  `deny` to ruleset 26239811. Read the Scorecard after the next push to
+  `main` (CII-Best-Practices should be 5, overall about 7). The badge
+  form was filled through the site's proposal URLs
+  (`/projects/16104/choose/edit?<field>_status=Met&...`), which refuse
+  URLs over about 8 KB, so a section goes in two or three submissions. Then #23 in its own session from `main`, and add its
   check to ruleset 26239811. Decide whether to turn on strict up-to-date
   checks (Branch-Protection 3 to 4) and whether to enable "automatically
   delete head branches" on the repo.
