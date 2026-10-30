@@ -91,6 +91,7 @@ pub enum ErrorCode {
     ProjectLoadFailed,
     StartFailed,
     BadRequest,
+    Forbidden,
     Internal,
 }
 

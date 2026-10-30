@@ -36,8 +36,23 @@ section.
   strictly `sbtd`↔`sbt`, never exposed to the agent.
 - **Invariant any redesign must preserve: agents only ever speak loopback
   HTTP to `sbtd`.**
-- **No auth on `sbtd`'s HTTP API beyond binding strictly to loopback.**
-  Accepted for a localhost dev tool; not revisited since.
+- **No auth on `sbtd`'s HTTP API beyond binding strictly to loopback and
+  the Host/Origin check below.** Accepted for a localhost dev tool;
+  bearer-token auth is issue #26, a design dialog.
+- **Every request must name a loopback host and carry no Origin** (decided
+  2026-10-30, issue #18). Loopback binding alone does not keep browsers
+  out: with DNS rebinding a page on `attacker.example`, re-resolved to
+  127.0.0.1, fetches `http://attacker.example:8077/exec` and the browser
+  delivers it with `Host: attacker.example:8077` plus an `Origin`; sbt runs
+  arbitrary code through the build definition, so that is code execution
+  from a web page. `crates/daemon/src/guard.rs` is an axum `from_fn` layer
+  under every route: `Host` is parsed (`parse_loopback_host`, pure and
+  unit-tested) into a loopback IP literal (the same set `LoopbackAddr`
+  accepts for `--bind`: `127/8` or `[::1]`) or `localhost`, case-insensitive,
+  with an optional numeric port; anything else, a missing Host, or any
+  `Origin` header at all is answered `403` with error code `forbidden` and
+  never reaches a handler. `sbtctl` sends a loopback Host and no Origin;
+  browsers always send an Origin on cross-origin fetches and on POSTs.
 - **`sbtd` cannot be told to bind anything but a loopback address:**
   `--bind` parses into a `LoopbackAddr` newtype (default `127.0.0.1:8077`,
   port 0 allowed), so the invariant above holds by construction rather than
@@ -64,7 +79,7 @@ crates/
     src/protocol.rs    HTTP request/response DTOs shared by daemon+cli
     src/paths.rs       shared state dir (~/.config/sbt-server)
   daemon/ sbt-server-daemon (lib)  axum 0.8 HTTP server wrapping Registry;
-                       src/{lib,config,server}.rs; `run()` is the whole daemon
+                       src/{lib,config,guard,server}.rs; `run()` is the whole daemon
   cli/    sbt-server-cli (lib)     agent-facing client; clap + reqwest;
                        src/{lib,args,client,render,daemon_ctl}.rs; `run()`
   sbt-server/          the one released package: `sbtd` and `sbtctl` as thin
@@ -288,8 +303,10 @@ Written down in the rebuild as the contract the hand-off's `/exec`,
 | `POST /shutdown` | `{ target: "one", cwd }` or `{ target: "all" }` | `{ stopped: [build_root] }` |
 
 Errors are JSON `{ code, message, output? }`: `no_build_root` and
-`bad_request` are 400, `project_load_failed` and `start_failed` are 500;
-`output` carries the captured boot lines when the project failed to load.
+`bad_request` are 400, `forbidden` is 403 (a missing or non-loopback `Host`,
+or any `Origin` header; see Agent transport), `project_load_failed` and
+`start_failed` are 500; `output` carries the captured boot lines when the
+project failed to load.
 
 `/exec` events are tagged by `type`, keep free text in `text`, and end
 with exactly one terminal event, always last:
@@ -387,7 +404,8 @@ guarantee.
   `SBT_SERVER_LIVE=1`.
 - **Idle reaping exists** (see Instance lifecycle); its interval is fixed
   at one minute and only the timeout is configurable.
-- **No auth** on the HTTP API beyond loopback binding.
+- **No auth** on the HTTP API beyond loopback binding and the Host/Origin
+  check (#26 would add a bearer token).
 - **Platforms: macOS is supported; Linux builds and passes CI and will be
   supported eventually; Windows is out of scope for good** (decided
   2026-10-29). Signals via `nix`, process groups and Unix sockets for
@@ -420,7 +438,8 @@ Files whose changes warrant re-checking this doc during wrap-up:
 
 Structural (this doc must change in the same PR): any transport other than
 loopback HTTP between `sbtctl` and `sbtd`, or anything that exposes sbt's
-socket or JSON-RPC to agents; adding auth to the HTTP API; a change to the
+socket or JSON-RPC to agents; adding auth to the HTTP API or changing the
+Host/Origin admission rule; a change to the
 takeover-on-start rule or the bounded-shutdown rule; a change to which
 output channels are captured or to the synthesized completion-line format;
 adopting a different sbt protocol (BSP, LSP) or framing; a change to
