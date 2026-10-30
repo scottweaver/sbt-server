@@ -24,6 +24,7 @@ decide which file is authoritative for a given decision.
 | ------------------------------------------------------- | ------------------------ |
 | Rust style, type discipline, FP conventions             | `RUST_BEST_PRACTICES.md` |
 | Workflow: branching, PRs, refactors, post-merge cleanup | `METHODOLOGIES.md`       |
+| Repository hardening: CI gates, scanning, supply chain, releases | `REPO_HARDENING.md`      |
 | Binding architecture constraints                        | `ARCHITECTURE.md`        |
 | Bindings for portable skills (stand-up, wrap-up)        | `PROJECT.md`             |
 | Current project state, in-flight work, what's next      | `STATE.md`               |

@@ -39,62 +39,57 @@ passes end to end against real sbt; fmt, `clippy -D warnings` and `test`
 are green.
 
 The active workstream since 2026-10-30 is security hardening: issues under
-the `security` label (#18 to #27, plus #34 for CodeQL), each its own PR from
-`main`, never stacked, worked in parallel sessions, one per issue. Landed:
-#18 (sbtd refuses a non-loopback `Host` or any `Origin`, 403 `forbidden`,
-`crates/daemon/src/guard.rs`), #22 (ci.yml: read-only token, SHA-pinned
-actions, `--locked`) and #24 (Dependabot for cargo and GitHub Actions).
-Also landed: #20 (state dir 0700, `sbtd.pid`/`sbtd.addr`/`sbtd.log`
-0600, sbt token redacted from trace frames) and #19 (`active.json` is
-trusted only when it names a loopback TCP address or a local socket and a
-token file under `~/.sbt`, checked before connecting). Nothing from the
-first batch is open; #23 and #34 are next.
+the `security` label (#18 to #27 and #34, plus #36, #40, #42 and #43 for
+coverage, Scorecard, the security policy and fuzzing), each its own PR
+from `main`, never stacked, worked in parallel sessions, one per issue.
+Landed: #18 (Host/Origin guard), #19 (`active.json` validated before it is
+trusted), #20 (private state dir, token redacted), #22 (read-only token,
+SHA-pinned actions, `--locked`), #24 (Dependabot), #36 (coverage to
+Codecov), #40 (Scorecard), #42 (SECURITY.md), #43 (cargo-fuzz targets),
+#34 (CodeQL, check `analyze (rust)`), #25 (cargo-auditable, CycloneDX
+SBOM, GitHub attestations, release.yml pinned through
+`[dist.github-action-commits]`) and #21 (ruleset `protect main`,
+vulnerability alerts, security updates, auto-merge; applied by hand). The
+rubric all of it amounts to is `.claude/rules/REPO_HARDENING.md`,
+installed from the global rules layer. Open: #23 (cargo-deny), #26
+(bearer-token design dialog), #27 (signing decision).
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `ab8d62f` (#41 merged); `v0.1.1` is the last release |
-| `docs/security-policy` | #42: SECURITY.md pointing at GitHub private vulnerability reporting | PR #44, CI green, awaiting merge |
-| `test/fuzz-parsers` | #43: cargo-fuzz targets over the five pure parsers, `fuzz/` outside the workspace | PR #45, 60 s seed runs clean locally, awaiting CI and merge |
+| `main` | trunk | at `ffc45c0` (#48 merged); `v0.1.1` is the last release |
+| `release/v0.1.2` | version bump; the release that proves #25 | PR #49, awaiting CI and merge; tag after |
+| `docs/state-hardening` | this refresh, REPO_HARDENING.md and its CLAUDE.md row | docs carve-out PR |
 
 ## Next up
 
-1. **Security hardening, one PR per issue, never stacked.** #23
-   (cargo-deny: adds a job to ci.yml) and #34 (CodeQL: its own workflow)
-   can run in parallel now, each in its own session from `main`. #21
-   (ruleset on `main`, vulnerability alerts, auto-merge; settings only,
-   closed by hand) once the required check names are settled: `check
-   (ubuntu-latest)`, `check (macos-latest)`, plus whatever #23 and #34
-   add. #25 (cargo-auditable, CycloneDX SBOM, GitHub attestations, pinned
-   release actions) rides the next release and now also owns the
-   release.yml pinning rule: `release.yml` is cargo-dist-generated and
-   `dist plan` fails on any hand edit, so its action pins go through the
-   `github-action-commits` table, and Dependabot PRs that touch it are
-   closed by hand (#35 was the first). #26 (bearer-token auth on sbtd) is
-   a design dialog and structural per ARCHITECTURE.md; #27 (macOS signing
-   and notarization) stays open until a team reports an endpoint policy
-   block. Scorecard scored `main` 4/10 on 2026-10-30 and maps onto the
-   open issues: Security-Policy is #42, Fuzzing is #43, SAST is #34,
-   Branch-Protection is #21, Pinned-Dependencies and Signed-Releases are
-   #25. #21's recipe is a ruleset on `main`: block force pushes and
-   deletion, require a pull request with 1 approval and stale-approval
-   dismissal, require `check (ubuntu-latest)`, `check (macos-latest)` and
-   `coverage` up to date, with Repository admin in the bypass list for
-   pull requests only; that reaches Scorecard tier 3 (8/10) for a solo
-   maintainer. Token-Permissions stays 0 because cargo-dist writes
-   `contents: write` at the top of `release.yml` with no knob to move it;
-   only an upstream change fixes it. Code-Review, Maintained, Contributors
-   and CII-Best-Practices are accepted as is. The CodeQL badge is added by
-   #34's own PR (the line is a comment on #34).
+1. **Finish the hardening batch.** Merge PR #49, tag `v0.1.2`, and check
+   the release carries `sbt-server.cdx.xml` and that
+   `gh attestation verify <archive> --owner scottweaver` passes; that is
+   what can lift Scorecard's Signed-Releases (caveat in Session handoff).
+   #23 (cargo-deny) is one PR adding a job to ci.yml and a `deny.toml`;
+   afterwards add its check name to ruleset `protect main` (id
+   26239811), which requires `check (ubuntu-latest)`,
+   `check (macos-latest)` and `analyze (rust)`, so every PR branch must
+   contain `codeql.yml` (a branch cut before #47 needs `main` merged in).
+   #26 is a design dialog and structural per ARCHITECTURE.md; #27 stays
+   open until a team reports an endpoint policy block. Scorecard scored
+   `main` 5/10 on 2026-10-30 before #34, #25 and #21 landed; expected
+   after the next run: SAST, Branch-Protection and Pinned-Dependencies
+   up; Token-Permissions still 0 (cargo-dist writes top-level
+   `contents: write` with no knob in 0.32); Code-Review, Maintained,
+   Contributors and CII-Best-Practices accepted as is; Packaging
+   unscored.
 2. **Releasing** is always: bump the workspace version in a PR, merge,
    push a `v*` tag, and the workflow does the rest; then
    `brew upgrade sbt-server`. The `HOMEBREW_TAP_TOKEN` secret is a
    fine-grained PAT scoped to the tap with Contents read/write; when it
    expires only the formula push fails.
 3. **Socialising it**: `docs/agents.md` is the page to hand to a team.
-   What a security review will ask for is what #23, #25 and #27 produce
-   (license report, SBOM, provenance, a signature).
+   #25 now produces the SBOM and provenance a security review asks for;
+   #23 adds the license report and #27 a signature. REPO_HARDENING.md is
+   the rubric to show a reviewer.
 4. **Still open from the hand-off**: auth on sbtd beyond loopback (now
    #26), Linux as a supported platform, sbt 2.x (only 1.x's protocol has
    been exercised), a launchd recipe for running sbtd at login. Each is a
@@ -105,6 +100,21 @@ first batch is open; #23 and #34 are next.
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — #34, #25 and #21 landed (PRs #47, #48; #21 by hand);
+  v0.1.2 bump open (PR #49); REPO_HARDENING.md extracted.** Why: the
+  three Scorecard gaps that were work rather than structure. CodeQL
+  (advanced setup, `security-and-quality`, build mode none) found nothing
+  on the current tree; #25 turns on cargo-auditable, CycloneDX and GitHub
+  attestations in `dist-workspace.toml` and pins every action in the
+  generated release.yml through `[dist.github-action-commits]`; #21 is
+  ruleset `protect main` plus vulnerability alerts, security updates and
+  auto-merge. The rubric those issues add up to now lives in the global
+  rules layer (`my-dev-environment` PR #32) and is installed here.
+  Lessons: the ruleset requires `analyze (rust)` by name, so a PR branch
+  without `codeql.yml` can never merge; the auto-mode classifier refuses
+  to merge PRs, so merges are the user's. Risk: nothing proves the
+  attestations until `v0.1.2` runs; #47 and #48 merged on green CI
+  without a second reader.
 - **2026-10-30 — Badges, coverage and Scorecard landed (#36 via PR #37,
   #40 via PR #41); #42 and #43 opened with PRs #44 and #45.** Why: a
   team evaluating the tool reads the badge row first. `coverage.yml` runs
@@ -209,38 +219,39 @@ first batch is open; #23 and #34 are next.
   `project_load_failed` (issue #2). Risk: sbt's terminal queries are
   answered generically; an sbt that asks something new would get "method
   not found", and its `getCapability` has no timeout.
-- **2026-10-29 — Phase 5: CI, README, rebuild complete** (branch
-  `chore/ci-and-state`, merged). Why: the workflow makes the three gates
-  the repo already passes locally binding once a remote exists, and the
-  README is what someone installing the tool reads first. Risk: CI has
-  never run (no remote); the first push will tell.
 
 ## Blocked / waiting
 
-- PRs #44 and #45 wait on a merge by hand; both are green and docs or
-  test-only.
+- The `v0.1.2` tag waits on PR #49 merging and the user's go; the release
+  workflow is the only test of #25.
 
 ## Session handoff
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** merge #44 and #45, run wrap-up for each, then do
-  #21 with the ruleset recipe in Next up, and start #23 and #34 as
-  parallel sessions from `main`. The next Scorecard run on `main` (weekly,
-  or on the merge push) should show Security-Policy and Fuzzing at 10.
-- Private vulnerability reporting was enabled on the repo on 2026-10-30;
-  vulnerability alerts, Dependabot security updates and auto-merge are
-  still off (#21). Until #21 lands, docs carve-out PRs merge by hand with
-  `--squash --delete-branch`.
+- **Resume here:** merge PR #49, tag `v0.1.2` on its merge commit, watch
+  the release workflow (first run of the attest and cyclonedx jobs),
+  verify with `gh attestation verify` and `brew upgrade sbt-server`; the
+  push to `main` reruns Scorecard, read the new score. Then #23 in its own
+  session from `main`, and add its check to the ruleset.
+- Ruleset `protect main` (id 26239811) is active since 2026-10-30; docs
+  carve-out PRs now merge with `gh pr merge --auto --squash
+  --delete-branch`, first exercised by this refresh's own PR.
+- Merged branches still on the remote because their PRs were merged from
+  the web UI: `ci/codeql`, `ci/scorecard`,
+  `claude/release-provenance-db862a`, `docs/security-policy`,
+  `test/fuzz-parsers`, `dependabot/github_actions/actions/checkout-7.0.1`.
+  Delete once the user confirms.
 - Fuzzing needs a nightly at or above the workspace's `rust-version`
   1.95: `rustup toolchain install nightly`, then
   `cargo +nightly fuzz run <target>` from `fuzz/`; the older dated
   nightlies on this machine fail the version check. cargo-fuzz is
   installed locally.
-- Signed-Releases caveat for #25: Scorecard looks for `*.intoto.jsonl` or
+- Signed-Releases caveat: Scorecard looks for `*.intoto.jsonl` or
   `*.sigstore.json` release assets, while GitHub attestations live in the
-  attestations API, so #25 may lift Pinned-Dependencies without lifting
-  Signed-Releases.
+  attestations API, so `v0.1.2` may lift Pinned-Dependencies without
+  lifting Signed-Releases. If so, the fix is an attestation bundle
+  attached as a release asset, a cargo-dist question.
 - `sbtctl daemon start` cannot start a daemon for
   `--daemon-url http://localhost:<port>`: `bind_from_url` hands
   `localhost:<port>` to `--bind`, which only parses IP literals. Found
@@ -248,10 +259,8 @@ first batch is open; #23 and #34 are next.
 - Deliberately not filed: a gitleaks CI job (secret scanning and push
   protection are on), and the local pre-commit scrub for names that must
   never appear in the repo; its word list stays outside the repo.
-- cargo-dist 0.32 keys verified for #25: `cargo-auditable`,
-  `cargo-cyclonedx`, `github-attestations` (experimental),
-  `github-action-commits` (survives `dist generate`). No macOS signing key
-  exists, so #27 would be a custom codesign plus notarytool job.
+- No macOS signing key exists, so #27 would be a custom codesign plus
+  notarytool job.
 
 ## Maintenance
 
