@@ -7,6 +7,7 @@ members = [
     "crates/fake-sbt",
     "crates/sbt-server",
 ]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.1"

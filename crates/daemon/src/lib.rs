@@ -6,6 +6,8 @@ mod config;
 mod guard;
 mod server;
 
+pub use guard::{HostError, LoopbackHost, parse_loopback_host};
+
 use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

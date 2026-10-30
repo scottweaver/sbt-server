@@ -132,6 +132,7 @@ cargo test --workspace                                                          
 SBT_SERVER_LIVE=1 cargo test -p sbt-server-core --test live -- --ignored --nocapture  # real sbt
 scripts/smoke.sh                                                                  # end to end
 cargo llvm-cov --workspace --ignore-filename-regex crates/fake-sbt/                # coverage, as CI measures it
+cargo +nightly fuzz run framing                                                  # fuzz a parser (see fuzz/)
 ```
 
 Tests run sbt's protocol against `crates/fake-sbt`, a stand-in that plays
@@ -140,7 +141,9 @@ deterministic; two ignored live tests and the smoke script exercise a real
 sbt. Rust 1.95 is pinned in `rust-toolchain.toml`; `cargo fmt`,
 `cargo clippy --all-targets -- -D warnings` and the tests gate every PR;
 `coverage.yml` measures the same tests with `cargo-llvm-cov` and reports to
-Codecov.
+Codecov. `fuzz/` holds cargo-fuzz targets for the pure parsers (`Host` header,
+JSON-RPC framing and messages, `active.json`, line assembly); they need a
+nightly toolchain and are run by hand, never in CI.
 
 A release is a tag: bump the workspace version, merge, push `vX.Y.Z`, and
 cargo-dist builds the archives, the installer and the Homebrew formula.
