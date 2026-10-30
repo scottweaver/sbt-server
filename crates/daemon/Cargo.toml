@@ -1,6 +1,7 @@
 [package]
 name = "sbt-server-daemon"
 description = "Keeps one warm sbt server per build root and exposes it to agents over loopback HTTP"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
