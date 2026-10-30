@@ -33,7 +33,7 @@ with curl against the fixture. `crates/cli` is `sbtctl`: passthrough,
 sbt's exit code clamped to 1..=124 and 125 reserved for tool failure.
 `.github/workflows/ci.yml` runs fmt, clippy and the tests on ubuntu and
 macos; `README.md` covers install and usage. The remote
-`scottweaver/sbt-server` exists and `main` is pushed. 121 tests pass; the two
+`scottweaver/sbt-server` exists and `main` is pushed. 137 tests pass; the two
 `#[ignore]` live tests pass with `SBT_SERVER_LIVE=1`; `scripts/smoke.sh`
 passes end to end against real sbt; fmt, `clippy -D warnings` and `test`
 are green.
@@ -44,22 +44,24 @@ the `security` label (#18 to #27, plus #34 for CodeQL), each its own PR from
 #18 (sbtd refuses a non-loopback `Host` or any `Origin`, 403 `forbidden`,
 `crates/daemon/src/guard.rs`), #22 (ci.yml: read-only token, SHA-pinned
 actions, `--locked`) and #24 (Dependabot for cargo and GitHub Actions).
-Open and green: #20 (PR #32) and #19 (PR #33).
+Also landed: #20 (state dir 0700, `sbtd.pid`/`sbtd.addr`/`sbtd.log`
+0600, sbt token redacted from trace frames) and #19 (`active.json` is
+trusted only when it names a loopback TCP address or a local socket and a
+token file under `~/.sbt`, checked before connecting). Nothing from the
+first batch is open; #23 and #34 are next.
 
 ## Branches in flight
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `main` | trunk | at `edeb306` (#31 merged); `v0.1.1` is the last release |
-| `claude/state-dir-permissions-26f4b8` | #20: state dir 0700, files 0600, token redacted from traces | PR #32, green after a merge from `main`, awaiting review |
-| `fix/validate-active-json` | #19: `active.json` must name loopback TCP and a token file under `~/.sbt` | PR #33, green, awaiting review |
-| *(worker session)* | README badges: release, CI, coverage, security | design dialog + issue first; no branch yet |
+| `main` | trunk | at `76158a9` (#33 merged); `v0.1.1` is the last release |
+| `ci/coverage` | #36: coverage via cargo-llvm-cov and Codecov (OIDC), badge in README | PR #37, measure job green; upload blocked until the repo is activated on codecov.io |
 
 ## Next up
 
-1. **Security hardening, one PR per issue, never stacked.** Merge #32
-   (#20) and #33 (#19), wrap each up. Then #23 (cargo-deny: adds a job to
-   ci.yml) and #34 (CodeQL: its own workflow) can run in parallel. #21
+1. **Security hardening, one PR per issue, never stacked.** #23
+   (cargo-deny: adds a job to ci.yml) and #34 (CodeQL: its own workflow)
+   can run in parallel now, each in its own session from `main`. #21
    (ruleset on `main`, vulnerability alerts, auto-merge; settings only,
    closed by hand) once the required check names are settled: `check
    (ubuntu-latest)`, `check (macos-latest)`, plus whatever #23 and #34
@@ -90,6 +92,16 @@ Open and green: #20 (PR #32) and #19 (PR #33).
 
 ## Most recent meaningful progress
 
+- **2026-10-30 — #19 and #20 landed (PRs #33, #32).** Why: the two
+  local-trust gaps from the assessment. #20 makes the state dir 0700 and
+  its files 0600 and keeps the sbt token out of trace frames; #19 refuses
+  an `active.json` naming a non-loopback TCP host or a token file outside
+  `~/.sbt` before connecting to anything. Both needed `main` merged in
+  before they could land, because every PR of the batch edits
+  ARCHITECTURE.md and the daemon; expect the same for any two PRs of this
+  workstream open at once. Risk: both merged on green CI without a human
+  read of the diff. The coverage PR (#37) is the first to exercise OIDC
+  upload to Codecov and is blocked on activating the repo there.
 - **2026-10-30 — #18, #22, #24 landed (PRs #31, #29, #30); #19 and #20
   open (PRs #33, #32); #34 filed.** Why: the first batch of the security
   workstream, run as five parallel sessions, one per issue, from `main`.
@@ -183,15 +195,6 @@ Open and green: #20 (PR #32) and #19 (PR #33).
   refuses to signal unless the pid file and `/health` agree. Risk: the
   cold-start boot time is not inside the `[success]` summary's elapsed
   figure; the `[sbtctl] starting sbt` line on stderr is the only hint.
-- **2026-10-29 — Phase 3: registry and daemon landed** (branch
-  `feat/daemon`, merged). Why: with the instance layer proven, the daemon
-  is a thin async shell around it, and writing the HTTP contract down in
-  ARCHITECTURE.md gives Phase 4's CLI a fixed target. Design points worth
-  knowing: boots run as detached tasks shared through a `watch` channel,
-  the reaper never touches a running instance, and SIGTERM drains every
-  instance before axum stops so streaming clients get `aborted:
-  daemon_shutdown`. Risk: `sbtd` has no auth beyond loopback (unchanged
-  from the hand-off), and the reaper interval is a one-minute constant.
 
 ## Blocked / waiting
 
@@ -201,11 +204,11 @@ Open and green: #20 (PR #32) and #19 (PR #33).
 
 <!-- transient; owned by the checkpoint skill -->
 
-- **Resume here:** review and merge PR #32 (#20) and PR #33 (#19), run
-  the wrap-up for each, then start #23 and #34 as two parallel sessions
-  from `main`. The README-badges session is in a design dialog about the
-  coverage pipeline (tool, upload service, token) and will file its issue
-  before coding.
+- **Resume here:** start #23 and #34 as two parallel sessions from
+  `main`. PR #37 (coverage, issue #36) waits on a one-time manual step:
+  sign in to codecov.io with GitHub and activate `scottweaver/sbt-server`,
+  then re-run its workflow; the badge in README stays "unknown" until the
+  first upload succeeds.
 - `sbtctl daemon start` cannot start a daemon for
   `--daemon-url http://localhost:<port>`: `bind_from_url` hands
   `localhost:<port>` to `--bind`, which only parses IP literals. Found
