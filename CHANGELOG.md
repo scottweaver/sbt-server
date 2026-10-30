@@ -23,9 +23,10 @@ change nothing.
   mints one at each start and writes it to `sbtd.token` (0600) in the state
   directory; `sbtctl` reads it from `--state-dir` / `SBTD_STATE_DIR` on its
   own, so agent call sites do not change. Tools that call the API directly
-  must send `Authorization: Bearer <token>`; a missing or wrong token
-  answers `401 unauthorized`. This keeps other local users on a shared
-  machine from running sbt as you. (#26)
+  send the token in the `Authorization` header with the bearer scheme, as
+  `docs/http-api.md` shows; a missing or wrong token answers
+  `401 unauthorized`. This keeps other local users on a shared machine
+  from running sbt as you. (#26)
 - The dependency tree is checked on every change against the RustSec
   advisory database, a license allowlist, wildcard versions and unknown
   sources with cargo-deny. (#23)
