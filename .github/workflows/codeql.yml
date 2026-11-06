@@ -20,11 +20,11 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           languages: rust
           build-mode: none
           queries: security-and-quality
-      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           category: /language:rust
